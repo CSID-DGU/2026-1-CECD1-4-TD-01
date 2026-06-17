@@ -11,6 +11,11 @@ __pycache__/
 *.py[cod]
 .venv*/
 .tools/
+DesktopApp/build/
+DesktopApp/dist/
+DesktopApp/*.spec
+DesktopApp/counseling_test.wav
+.counseling_desktop/
 Analysis/Voice/converted/
 
 # Android/Kotlin frontend local files and build outputs
