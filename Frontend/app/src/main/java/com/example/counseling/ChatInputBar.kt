@@ -1,16 +1,15 @@
 package com.example.counseling
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -18,10 +17,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
@@ -50,14 +45,18 @@ fun MessageInput2(
     isThinking: Boolean,
     imeBottomPadding: Dp,
     fontSize: ChatFontSize,
+    presentationMode: Boolean,
+    compactControls: Boolean,
+    chromeHidden: Boolean,
+    onToggleChrome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showAttachmentMenu by remember { mutableStateOf(false) }
     Surface(
         tonalElevation = 4.dp,
         shadowElevation = 2.dp,
         color = MaterialTheme.colorScheme.surface,
-        modifier = modifier,
+        modifier = modifier
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
     ) {
         Column(
             modifier = Modifier.padding(
@@ -92,42 +91,6 @@ fun MessageInput2(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
-                Box {
-                    OutlinedButton(
-                        onClick = { showAttachmentMenu = true },
-                        enabled = enabled || isRecordingAudio,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        Text("+")
-                    }
-                    DropdownMenu(
-                        expanded = showAttachmentMenu,
-                        onDismissRequest = { showAttachmentMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("말하기") },
-                            onClick = {
-                                showAttachmentMenu = false
-                                onSpeechInput()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (isRecordingAudio) "녹음 정지" else "녹음 시작") },
-                            onClick = {
-                                showAttachmentMenu = false
-                                onRecordAudio()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("사고 모드: ${thinkingMode.next().label}") },
-                            onClick = {
-                                showAttachmentMenu = false
-                                onCycleThinkingMode()
-                            },
-                        )
-                    }
-                }
                 OutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -137,14 +100,76 @@ fun MessageInput2(
                     maxLines = 5,
                     textStyle = TextStyle(fontSize = fontSize.sizeSp.sp),
                     shape = RoundedCornerShape(8.dp),
-                    placeholder = { Text("메시지를 입력하세요") },
+                    placeholder = {
+                        Text(if (presentationMode) "지금 마음에 남아 있는 일을 적어 주세요" else "메시지를 입력하세요")
+                    },
                 )
+                OutlinedButton(
+                    onClick = onToggleChrome,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.widthIn(min = 70.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (chromeHidden) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (chromeHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                ) {
+                    Text(if (chromeHidden) "UI 표시" else "UI 숨김")
+                }
                 Button(
                     onClick = onSend,
                     enabled = enabled && !isRecordingAudio && !isThinking && (value.isNotBlank() || attachmentLabel != null),
                     shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.widthIn(min = 72.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    ),
                 ) {
                     Text("전송")
+                }
+            }
+            if (!compactControls) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = onSpeechInput,
+                        enabled = enabled,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.primary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surface,
+                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                        ),
+                    ) {
+                        Text("말하기")
+                    }
+                    OutlinedButton(
+                        onClick = onRecordAudio,
+                        enabled = enabled || isRecordingAudio,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (isRecordingAudio) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isRecordingAudio) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surface,
+                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                        ),
+                    ) {
+                        Text(if (isRecordingAudio) "녹음 종료" else "녹음")
+                    }
+                    if (!presentationMode) {
+                        OutlinedButton(
+                            onClick = onCycleThinkingMode,
+                            enabled = enabled,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(thinkingMode.label)
+                        }
+                    }
                 }
             }
         }

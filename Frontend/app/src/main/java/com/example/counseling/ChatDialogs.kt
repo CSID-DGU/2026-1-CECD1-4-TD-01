@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -162,6 +163,8 @@ fun SessionListDialog(
 fun ChatSettingsDialog(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    presentationMode: Boolean,
+    onPresentationModeChange: (Boolean) -> Unit,
     status: EngineStatus,
     includeHealthContext: Boolean,
     onToggleHealthContext: () -> Unit,
@@ -188,10 +191,11 @@ fun ChatSettingsDialog(
 ) {
     var conversationOpen by remember { mutableStateOf(false) }
     var responseOpen by remember { mutableStateOf(true) }
+    var versionTapCount by remember { mutableStateOf(0) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("설정") },
+        title = { Text(if (presentationMode) "화면 설정" else "개발자 설정") },
         text = {
             LazyColumn(
                 modifier = Modifier
@@ -200,84 +204,90 @@ fun ChatSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    SettingsPlainSectionTitle("모델")
+                    SettingsPlainSectionTitle(if (presentationMode) "상담 준비" else "모델")
                 }
                 item {
                     Text(
-                        status.message,
+                        if (presentationMode) {
+                            if (status.isModelLoaded) "대화를 시작할 준비가 되었습니다." else "처음 실행했다면 상담 모델 파일을 선택해 주세요."
+                        } else {
+                            status.message
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 item {
                     Button(onClick = onLoadModel, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
-                        Text("모델 파일 선택")
+                        Text(if (presentationMode) "상담 준비 파일 선택" else "모델 파일 선택")
                     }
                 }
 
-                item { SettingsSectionHeader("대화 관리", conversationOpen) { conversationOpen = !conversationOpen } }
-                if (conversationOpen) item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SettingsActionButton(onClick = onShowSystemPrompt, modifier = Modifier.weight(1f)) {
-                            Text("말투/프롬프트")
-                        }
-                        SettingsActionButton(onClick = onShowMemories, modifier = Modifier.weight(1f)) {
-                            Text("기억")
-                        }
-                    }
-                }
-                if (conversationOpen) item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SettingsActionButton(onClick = onNewSession, modifier = Modifier.weight(1f)) {
-                            Text("새 세션")
-                        }
-                        SettingsActionButton(onClick = onShowSessions, modifier = Modifier.weight(1f)) {
-                            Text("세션 목록")
+                if (!presentationMode) {
+                    item { SettingsSectionHeader("대화 관리", conversationOpen) { conversationOpen = !conversationOpen } }
+                    if (conversationOpen) item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingsActionButton(onClick = onShowSystemPrompt, modifier = Modifier.weight(1f)) {
+                                Text("말투/프롬프트")
+                            }
+                            SettingsActionButton(onClick = onShowMemories, modifier = Modifier.weight(1f)) {
+                                Text("기억")
+                            }
                         }
                     }
-                }
-                if (conversationOpen) item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SettingsActionButton(onClick = onExportSession, modifier = Modifier.weight(1f)) {
-                            Text("내보내기")
-                        }
-                        SettingsActionButton(onClick = onImportSession, modifier = Modifier.weight(1f)) {
-                            Text("불러오기")
+                    if (conversationOpen) item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingsActionButton(onClick = onNewSession, modifier = Modifier.weight(1f)) {
+                                Text("새 세션")
+                            }
+                            SettingsActionButton(onClick = onShowSessions, modifier = Modifier.weight(1f)) {
+                                Text("세션 목록")
+                            }
                         }
                     }
-                }
+                    if (conversationOpen) item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingsActionButton(onClick = onExportSession, modifier = Modifier.weight(1f)) {
+                                Text("내보내기")
+                            }
+                            SettingsActionButton(onClick = onImportSession, modifier = Modifier.weight(1f)) {
+                                Text("불러오기")
+                            }
+                        }
+                    }
 
-                item { SettingsSectionHeader("응답 옵션", responseOpen) { responseOpen = !responseOpen } }
-                if (responseOpen) item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SettingsActionButton(onClick = onToggleHealthContext, modifier = Modifier.weight(1f), selected = includeHealthContext) {
-                            Text(if (includeHealthContext) "건강 포함" else "건강 제외")
-                        }
-                        SettingsActionButton(onClick = onTogglePhenotypeContext, modifier = Modifier.weight(1f), selected = includePhenotypeContext) {
-                            Text(if (includePhenotypeContext) "패턴 포함" else "패턴 제외")
-                        }
-                    }
-                }
-                if (responseOpen) item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SettingsActionButton(
-                            onClick = onToggleGalleryAnalysisContext,
-                            modifier = Modifier.weight(1f),
-                            selected = includeGalleryAnalysisContext,
-                        ) {
-                            Text(if (includeGalleryAnalysisContext) "Gallery 포함" else "Gallery 제외")
-                        }
-                        SettingsActionButton(onClick = onCycleHealthPeriod, modifier = Modifier.weight(1f)) {
-                            Text("기간 ${healthContextPeriod.label}")
-                        }
-                        SettingsActionButton(onClick = onCycleThinkingMode, modifier = Modifier.weight(1f)) {
-                            Text("사고 ${thinkingMode.label}")
+                    item { SettingsSectionHeader("응답 옵션", responseOpen) { responseOpen = !responseOpen } }
+                    if (responseOpen) item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingsActionButton(onClick = onToggleHealthContext, modifier = Modifier.weight(1f), selected = includeHealthContext) {
+                                Text(if (includeHealthContext) "건강 포함" else "건강 제외")
+                            }
+                            SettingsActionButton(onClick = onTogglePhenotypeContext, modifier = Modifier.weight(1f), selected = includePhenotypeContext) {
+                                Text(if (includePhenotypeContext) "패턴 포함" else "패턴 제외")
+                            }
                         }
                     }
-                }
-                if (responseOpen) item {
-                    SettingsActionButton(onClick = onToggleDirectAttachmentMode, modifier = Modifier.fillMaxWidth(), selected = directAttachmentMode) {
-                        Text(if (directAttachmentMode) "오디오 직접 분석 켜짐" else "오디오 안전 모드")
+                    if (responseOpen) item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SettingsActionButton(
+                                onClick = onToggleGalleryAnalysisContext,
+                                modifier = Modifier.weight(1f),
+                                selected = includeGalleryAnalysisContext,
+                            ) {
+                                Text(if (includeGalleryAnalysisContext) "Gallery 포함" else "Gallery 제외")
+                            }
+                            SettingsActionButton(onClick = onCycleHealthPeriod, modifier = Modifier.weight(1f)) {
+                                Text("기간 ${healthContextPeriod.label}")
+                            }
+                            SettingsActionButton(onClick = onCycleThinkingMode, modifier = Modifier.weight(1f)) {
+                                Text("사고 ${thinkingMode.label}")
+                            }
+                        }
+                    }
+                    if (responseOpen) item {
+                        SettingsActionButton(onClick = onToggleDirectAttachmentMode, modifier = Modifier.fillMaxWidth(), selected = directAttachmentMode) {
+                            Text(if (directAttachmentMode) "오디오 직접 분석 켜짐" else "오디오 안전 모드")
+                        }
                     }
                 }
 
@@ -302,17 +312,42 @@ fun ChatSettingsDialog(
                     SettingsPlainSectionTitle("테마")
                 }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AppThemeMode.entries.forEach { mode ->
-                            SettingsActionButton(
-                                onClick = { onThemeModeChange(mode) },
-                                modifier = Modifier.weight(1f),
-                                selected = mode == themeMode,
-                            ) {
-                                Text(mode.label)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AppThemeMode.entries.chunked(3).forEach { rowModes ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowModes.forEach { mode ->
+                                    SettingsActionButton(
+                                        onClick = { onThemeModeChange(mode) },
+                                        modifier = Modifier.weight(1f),
+                                        selected = mode == themeMode,
+                                    ) {
+                                        Text(mode.label)
+                                    }
+                                }
+                                repeat(3 - rowModes.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
                     }
+                }
+
+                item {
+                    Text(
+                        text = if (presentationMode) "v1.0.7 사용자 화면" else "v1.0.7 개발자 화면",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .clickable {
+                                versionTapCount += 1
+                                if (versionTapCount >= 5) {
+                                    versionTapCount = 0
+                                    onPresentationModeChange(!presentationMode)
+                                }
+                            },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         },
@@ -333,6 +368,8 @@ private fun SettingsSectionHeader(title: String, open: Boolean, onClick: () -> U
         colors = ButtonDefaults.buttonColors(
             containerColor = if (open) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
             contentColor = if (open) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
         ),
     ) {
         Text(
@@ -366,8 +403,10 @@ private fun SettingsActionButton(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-            contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
         ),
         content = content,
     )

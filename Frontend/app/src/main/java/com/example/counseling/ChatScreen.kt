@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -75,9 +77,12 @@ import java.util.Locale
 fun ChatScreen(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    presentationMode: Boolean,
+    onPresentationModeChange: (Boolean) -> Unit,
     chromeVisible: Boolean,
     onChromeVisibleChange: (Boolean) -> Unit,
     settingsOpenRequests: Int,
+    imeVisible: Boolean,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -103,7 +108,6 @@ fun ChatScreen(
     var showPromptOverview by remember { mutableStateOf(false) }
     var promptPreview by remember { mutableStateOf<PromptPreviewState?>(null) }
     var showMemories by remember { mutableStateOf(false) }
-    var showChatMenu by remember { mutableStateOf(false) }
     var showChatSettings by remember { mutableStateOf(false) }
     var attachedAudioPath by remember { mutableStateOf<String?>(null) }
     var attachmentLabel by remember { mutableStateOf<String?>(null) }
@@ -122,6 +126,7 @@ fun ChatScreen(
     var activeAudioRecording by remember { mutableStateOf<ActiveAudioRecording?>(null) }
     var isGenerating by remember { mutableStateOf(false) }
     var isLoadingModel by remember { mutableStateOf(false) }
+    var chromeLockedHidden by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     fun loadSelectedModel(uri: Uri) {
@@ -421,6 +426,13 @@ fun ChatScreen(
         ChatSettingsDialog(
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
+            presentationMode = presentationMode,
+            onPresentationModeChange = { enabled ->
+                chromeLockedHidden = false
+                onPresentationModeChange(enabled)
+                showChatSettings = false
+                onChromeVisibleChange(true)
+            },
             status = status,
             includeHealthContext = includeHealthContext,
             onToggleHealthContext = { includeHealthContext = !includeHealthContext },
@@ -498,22 +510,54 @@ fun ChatScreen(
         status = EngineStatus(false, "모델 파일을 선택해 주세요.")
     }
 
-    LaunchedEffect(messages.size) {
+    val busyRowVisible = isGenerating || isLoadingModel
+    LaunchedEffect(messages.size, busyRowVisible) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            listState.animateScrollToItem(if (busyRowVisible) messages.size else messages.lastIndex)
         }
     }
 
-    LaunchedEffect(listState) {
+    val lastMessageContent = messages.lastOrNull()?.content.orEmpty()
+    LaunchedEffect(lastMessageContent, busyRowVisible) {
+        if (messages.isNotEmpty() && busyRowVisible) {
+            listState.scrollToItem(messages.size)
+        }
+    }
+
+    LaunchedEffect(listState, imeVisible, busyRowVisible) {
         var lastIndex = listState.firstVisibleItemIndex
         var lastOffset = listState.firstVisibleItemScrollOffset
+        var accumulatedDown = 0
+        var accumulatedUp = 0
         snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
             .collect { (index, offset) ->
-                val scrollingDown = index > lastIndex || (index == lastIndex && offset > lastOffset)
-                val scrollingUp = index < lastIndex || (index == lastIndex && offset < lastOffset - 8)
+                val delta = when {
+                    index > lastIndex -> 10_000 + offset
+                    index < lastIndex -> -10_000 - lastOffset
+                    else -> offset - lastOffset
+                }
                 when {
-                    scrollingDown -> onChromeVisibleChange(false)
-                    scrollingUp -> onChromeVisibleChange(true)
+                    index == 0 && offset == 0 && !imeVisible && !busyRowVisible && !chromeLockedHidden -> {
+                        accumulatedDown = 0
+                        accumulatedUp = 0
+                        onChromeVisibleChange(true)
+                    }
+                    delta > 3 -> {
+                        accumulatedDown += delta
+                        accumulatedUp = 0
+                        if (accumulatedDown >= 8) {
+                            onChromeVisibleChange(false)
+                            accumulatedDown = 0
+                        }
+                    }
+                    delta < -12 -> {
+                        accumulatedUp += -delta
+                        accumulatedDown = 0
+                        if (accumulatedUp >= 160 && !imeVisible && !busyRowVisible && !chromeLockedHidden) {
+                            onChromeVisibleChange(true)
+                            accumulatedUp = 0
+                        }
+                    }
                 }
                 lastIndex = index
                 lastOffset = offset
@@ -531,142 +575,25 @@ fun ChatScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        if (false) {
-        AnimatedVisibility(visible = chromeVisible) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Gemma 4 E4B IT", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "LiteRT-LM 로컬 실행",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Box {
-                        OutlinedButton(
-                            enabled = !isLoadingModel && !isGenerating,
-                            onClick = { showChatMenu = true },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surface),
-                        ) {
-                            Text("☰")
-                        }
-                        DropdownMenu(
-                            expanded = showChatMenu,
-                            onDismissRequest = { showChatMenu = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("모델 로드") },
-                                onClick = {
-                                    showChatMenu = false
-                                    modelPicker.launch(arrayOf("*/*"))
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("프롬프트") },
-                                onClick = {
-                                    showChatMenu = false
-                                    showSystemPrompt = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("기억") },
-                                onClick = {
-                                    showChatMenu = false
-                                    showMemories = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (includeHealthContext) "건강 데이터 제외" else "건강 데이터 포함") },
-                                onClick = {
-                                    includeHealthContext = !includeHealthContext
-                                    showChatMenu = false
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (includePhenotypeContext) "생활 패턴 제외" else "생활 패턴 포함") },
-                                onClick = {
-                                    includePhenotypeContext = !includePhenotypeContext
-                                    showChatMenu = false
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("건강 기간: ${healthContextPeriod.next().label}로 변경") },
-                                onClick = {
-                                    healthContextPeriod = healthContextPeriod.next()
-                                    showChatMenu = false
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("대화 내보내기") },
-                                onClick = {
-                                    showChatMenu = false
-                                    exportSession.launch("counseling_session.json")
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("대화 불러오기") },
-                                onClick = {
-                                    showChatMenu = false
-                                    importSession.launch(arrayOf("application/json", "text/*", "*/*"))
-                                },
-                            )
-                        }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StatusPill(
-                        text = if (status.isModelLoaded) "모델 준비됨" else "모델 필요",
-                        active = status.isModelLoaded,
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (includeHealthContext) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                    ) {
-                        Text(
-                            text = if (includeHealthContext) "건강 ${healthContextPeriod.label}" else "건강 제외",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-
-        }
-
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                StatusPill(
-                    text = if (status.isModelLoaded) "모델 준비" else "모델 필요",
-                    active = status.isModelLoaded,
+        AnimatedVisibility(visible = chromeVisible && !imeVisible && !busyRowVisible && !chromeLockedHidden) {
+            if (presentationMode) {
+                UserPresentationHeader(
+                    modelReady = status.isModelLoaded,
+                    isRecordingAudio = isRecordingAudio,
+                    onOpenSettings = { showChatSettings = true },
                 )
-                Text(
-                    text = buildList {
-                        add(if (includeHealthContext) "건강 ${healthContextPeriod.label}" else "건강 제외")
-                        add(if (includePhenotypeContext) "패턴 포함" else "패턴 제외")
-                    }.joinToString(" · "),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            } else {
+                DeveloperStatusHeader(
+                    modelReady = status.isModelLoaded,
+                    statusMessage = status.message,
+                    isRecordingAudio = isRecordingAudio,
+                    includeHealthContext = includeHealthContext,
+                    includePhenotypeContext = includePhenotypeContext,
+                    includeGalleryAnalysisContext = includeGalleryAnalysisContext,
+                    healthContextPeriod = healthContextPeriod,
+                    onOpenSettings = { showChatSettings = true },
                 )
-                TextButton(onClick = { showChatSettings = true }) {
-                    Text("설정")
-                }
             }
-        }
         }
 
         LazyColumn(
@@ -681,15 +608,15 @@ fun ChatScreen(
                 MessageBubble(message = message, fontSize = chatFontSize)
             }
 
-            if (isGenerating || isLoadingModel) {
+            if (busyRowVisible) {
                 item {
                     BusyStatusRow(
                         title = when {
                             isLoadingModel -> "모델 로딩 중"
-                            isThinking -> "사고 중"
-                            else -> "응답 생성 중"
+                            isThinking -> if (presentationMode) "답변을 정리하고 있어요" else "사고 중"
+                            else -> if (presentationMode) "답변을 준비하고 있어요" else "응답 생성 중"
                         },
-                        message = status.message,
+                        message = if (presentationMode) "잠시만 기다려 주세요." else status.message,
                     )
                 }
             }
@@ -728,6 +655,7 @@ fun ChatScreen(
                 val text = input.trim()
                 if ((text.isEmpty() && attachmentLabel == null) || isGenerating || isRecordingAudio || !status.isModelLoaded) return@MessageInput2
 
+                onChromeVisibleChange(false)
                 input = ""
                 val rawUserMessage = ChatMessage(
                     role = ChatRole.User,
@@ -751,14 +679,26 @@ fun ChatScreen(
                     importantMemories = importantMemories,
                 )
                 isThinking = useThinking
+                val usePresentationMode = presentationMode
 
                 scope.launch {
-                    val userMessage = rawUserMessage.withVoiceEmotionContext(
+                    val analyzedUserMessage = rawUserMessage.withVoiceEmotionContext(
                         voiceEmotionAnalyzer = voiceEmotionAnalyzer,
                     ) { message ->
                         status = EngineStatus(status.isModelLoaded, message)
                     }
-                    messages += userMessage
+                    val visibleUserMessage = if (usePresentationMode) {
+                        rawUserMessage.copy(
+                            attachmentLabel = when {
+                                rawUserMessage.audioPath != null -> "음성 메시지"
+                                rawUserMessage.attachmentLabel != null -> rawUserMessage.attachmentLabel
+                                else -> null
+                            },
+                        )
+                    } else {
+                        analyzedUserMessage
+                    }
+                    messages += visibleUserMessage
                     var savedImportantMemory = false
                     extractImportantMemory(rawUserMessage.content)?.let { memory ->
                         if (importantMemories.none { it.equals(memory, ignoreCase = true) }) {
@@ -804,16 +744,18 @@ fun ChatScreen(
                     }
                     val relevantMemories = memoryStore
                         .searchRelevant(text, sessionId = currentSessionId)
-                        .filterNot { it.role == ChatRole.User && it.content == userMessage.content }
-                    val promptMessages = messages
+                        .filterNot { it.role == ChatRole.User && it.content == visibleUserMessage.content }
+                    val promptBaseMessages = messages
                         .take(assistantIndex)
+                        .dropLast(1) + analyzedUserMessage
+                    val promptMessages = promptBaseMessages
                         .withMemoryContext(importantMemories, relevantMemories)
                         .withHealthContext(healthContext)
                         .withPhenotypeContext(phenotypeContext)
                         .withGalleryAnalysisContext(galleryAnalysisContext)
                         .withThinkingInstruction(useThinking)
                         .toList()
-                    liteRtEngine.setDirectAttachmentMode(directAttachmentMode)
+                    liteRtEngine.setDirectAttachmentMode(directAttachmentMode || usePresentationMode)
                     val reply = liteRtEngine.generateStreaming(promptMessages) { partial ->
                         messages[assistantIndex] = ChatMessage(ChatRole.Assistant, stripInternalThinking(partial))
                     }
@@ -832,9 +774,164 @@ fun ChatScreen(
             isThinking = isThinking,
             imeBottomPadding = imeBottomPadding,
             fontSize = chatFontSize,
+            presentationMode = presentationMode,
+            compactControls = imeVisible || busyRowVisible,
+            chromeHidden = chromeLockedHidden,
+            onToggleChrome = {
+                chromeLockedHidden = !chromeLockedHidden
+                onChromeVisibleChange(!chromeLockedHidden)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding(),
+        )
+    }
+}
+
+@Composable
+private fun UserPresentationHeader(
+    modelReady: Boolean,
+    isRecordingAudio: Boolean,
+    onOpenSettings: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 2.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "온",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "오늘의 마음 대화",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = if (modelReady) {
+                                "편하게 적거나 말해 주세요. 차분히 함께 정리해 볼게요."
+                            } else {
+                                "상담 준비 파일을 선택하면 대화를 시작할 수 있어요."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onOpenSettings,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.widthIn(min = 64.dp),
+                    ) {
+                        Text("설정")
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DemoContextChip(text = if (modelReady) "대화 준비" else "준비 필요")
+                    DemoContextChip(text = if (isRecordingAudio) "듣는 중" else "음성 가능")
+                    DemoContextChip(text = "개인 맞춤")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeveloperStatusHeader(
+    modelReady: Boolean,
+    statusMessage: String,
+    isRecordingAudio: Boolean,
+    includeHealthContext: Boolean,
+    includePhenotypeContext: Boolean,
+    includeGalleryAnalysisContext: Boolean,
+    healthContextPeriod: HealthPeriod,
+    onOpenSettings: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (modelReady) "개발자 화면: 모델 준비 완료" else "개발자 화면: 모델을 불러오면 대화를 시작합니다",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (isRecordingAudio) "음성을 듣고 있습니다. 녹음 종료를 누르면 분석에 첨부됩니다." else statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = onOpenSettings) {
+                    Text("설정")
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatusPill(text = if (modelReady) "온디바이스" else "모델 필요", active = modelReady)
+                DemoContextChip(text = if (isRecordingAudio) "녹음 중" else "음성 인식")
+                DemoContextChip(
+                    text = buildList {
+                        if (includeHealthContext) add("건강 ${healthContextPeriod.label}")
+                        if (includePhenotypeContext) add("생활 패턴")
+                        if (includeGalleryAnalysisContext) add("갤러리")
+                    }.ifEmpty { listOf("맥락 선택 가능") }.joinToString(" · "),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DemoContextChip(text: String) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }

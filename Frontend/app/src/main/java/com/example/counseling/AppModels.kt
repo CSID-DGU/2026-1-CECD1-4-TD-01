@@ -15,10 +15,10 @@ import java.io.File
 import java.time.LocalDate
 
 enum class AppScreen(val label: String, val icon: String) {
-    Chat("상담", "상"),
-    Gallery("갤러리", "사"),
-    Health("건강", "건"),
-    Phenotype("패턴", "패"),
+    Chat("대화", "톡"),
+    Gallery("갤러리", "사진"),
+    Health("건강", "심박"),
+    Phenotype("패턴", "생활"),
     Settings("설정", "설"),
 }
 

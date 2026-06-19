@@ -26,6 +26,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -51,10 +52,10 @@ import com.psychocare.data.CallLogSummary
 import com.psychocare.phenotype.AppUsageAnalyzer
 import com.psychocare.phenotype.CallLogAnalyzer
 import kotlinx.coroutines.launch
-import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
-fun PhenotypeScreen() {
+fun PhenotypeScreen(presentationMode: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val callAnalyzer = remember { CallLogAnalyzer(context.applicationContext) }
@@ -98,9 +99,9 @@ fun PhenotypeScreen() {
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("생활 패턴", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(if (presentationMode) "생활 리듬" else "생활 패턴", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(
-                    text = message,
+                    text = if (presentationMode) "허용한 기록을 바탕으로 최근 리듬을 점수로만 간단히 보여줍니다." else message,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -119,14 +120,14 @@ fun PhenotypeScreen() {
                     enabled = !isLoading,
                     shape = RoundedCornerShape(8.dp),
                 ) {
-                    Text("통화 권한")
+                    Text(if (presentationMode) "연락 리듬 연결" else "통화 권한")
                 }
                 OutlinedButton(
                     onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
                     enabled = !isLoading,
                     shape = RoundedCornerShape(8.dp),
                 ) {
-                    Text("앱 사용 설정")
+                    Text(if (presentationMode) "생활 리듬 연결" else "앱 사용 설정")
                 }
                 OutlinedButton(
                     onClick = { refresh() },
@@ -137,22 +138,92 @@ fun PhenotypeScreen() {
                 }
             }
         }
-        item {
-            IndicatorSummary(callSummary, appUsageSummary)
-        }
-        item {
-            CallPatternSection(callSummary)
-        }
-        item {
-            AppUsageSection(appUsageSummary)
-        }
-        appUsageSummary?.topApps.orEmpty().takeIf { it.isNotEmpty() }?.let { apps ->
+        if (presentationMode) {
             item {
-                Text("상위 앱 사용 시간", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                UserPatternSummary(callSummary, appUsageSummary)
             }
-            items(apps.take(12)) { app ->
-                AppUsageRow(app, apps.maxOfOrNull { it.totalTimeMin } ?: 1L)
+        } else {
+            item {
+                IndicatorSummary(callSummary, appUsageSummary)
             }
+            item {
+                CallPatternSection(callSummary)
+            }
+            item {
+                AppUsageSection(appUsageSummary)
+            }
+            appUsageSummary?.topApps.orEmpty().takeIf { it.isNotEmpty() }?.let { apps ->
+                item {
+                    Text("상위 앱 사용 시간", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                }
+                items(apps.take(12)) { app ->
+                    AppUsageRow(app, apps.maxOfOrNull { it.totalTimeMin } ?: 1L)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserPatternSummary(callLog: CallLogSummary?, appUsage: AppUsageSummary?) {
+    val contactScore = contactRhythmScore(callLog)
+    val routineScore = routineBalanceScore(appUsage)
+    val overallScore = listOfNotNull(contactScore, routineScore).takeIf { it.isNotEmpty() }?.average()?.roundToInt()
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(shape = RoundedCornerShape(8.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("최근 리듬 참고 점수", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "건강/정신상태 판정이 아니라, 지난주와 달라진 흐름을 부드럽게 요약합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (overallScore == null) {
+                    Text("아직 연결된 생활 리듬 데이터가 없습니다.", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text("${overallScore}점", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    LinearProgressIndicator(
+                        progress = { (overallScore / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+        UserPatternScoreCard(
+            title = "연락 리듬",
+            score = contactScore,
+            detail = contactRhythmText(callLog),
+        )
+        UserPatternScoreCard(
+            title = "일상 균형",
+            score = routineScore,
+            detail = routineBalanceText(appUsage),
+        )
+        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "이 점수는 진단이 아니라 상담 전 대화 주제를 잡기 위한 참고용입니다.",
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UserPatternScoreCard(title: String, score: Int?, detail: String) {
+    Surface(shape = RoundedCornerShape(8.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(score?.let { "${it}점" } ?: "연결 필요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
+            LinearProgressIndicator(
+                progress = { ((score ?: 0) / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -161,6 +232,69 @@ private enum class IndicatorLevel(val label: String, val color: Color) {
     Normal("정상", Color(0xFF2E7D32)),
     Caution("주의", Color(0xFFF57F17)),
     Risk("위험", Color(0xFFC62828)),
+}
+
+private fun contactRhythmScore(callLog: CallLogSummary?): Int? {
+    if (callLog == null) return null
+    if (callLog.totalCallsThisWeek == 0 && callLog.totalCallsPrevWeek == 0) return null
+    var score = 82
+    val changePenalty = when {
+        callLog.totalCallsPrevWeek < 3 -> 0
+        callLog.weeklyChangePct <= -50f -> 28
+        callLog.weeklyChangePct <= -30f -> 18
+        callLog.weeklyChangePct <= -10f -> 8
+        else -> 0
+    }
+    val quietPenalty = when {
+        callLog.zeroCommunicationStreak >= 5 -> 18
+        callLog.zeroCommunicationStreak >= 3 -> 10
+        else -> 0
+    }
+    score -= changePenalty + quietPenalty
+    return score.coerceIn(0, 100)
+}
+
+private fun routineBalanceScore(appUsage: AppUsageSummary?): Int? {
+    if (appUsage == null || !appUsage.hasPermission) return null
+    val totalPenalty = when {
+        appUsage.dailyAvgScreenTimeMin >= 360 -> 30
+        appUsage.dailyAvgScreenTimeMin >= 240 -> 20
+        appUsage.dailyAvgScreenTimeMin >= 180 -> 10
+        else -> 0
+    }
+    val nightPenalty = when {
+        appUsage.dailyAvgLateNightMin >= 60 -> 26
+        appUsage.dailyAvgLateNightMin >= 30 -> 16
+        appUsage.dailyAvgLateNightMin >= 15 -> 8
+        else -> 0
+    }
+    return (100 - totalPenalty - nightPenalty).coerceIn(0, 100)
+}
+
+private fun contactRhythmText(callLog: CallLogSummary?): String {
+    if (callLog == null) return "연락 리듬을 보려면 권한 연결이 필요합니다."
+    val direction = when {
+        callLog.weeklyChangePct <= -30f -> "지난주보다 연락 흐름이 꽤 줄어든 편입니다."
+        callLog.weeklyChangePct <= -10f -> "지난주보다 연락 흐름이 조금 줄어든 편입니다."
+        callLog.weeklyChangePct >= 20f -> "지난주보다 연락 흐름이 늘어난 편입니다."
+        else -> "지난주와 비슷한 연락 흐름입니다."
+    }
+    val known = when {
+        callLog.namedContactsRate >= 0.7f -> "알던 사람과의 연락 비중이 높은 편입니다."
+        callLog.namedContactsRate >= 0.35f -> "알던 사람과의 연락이 일부 확인됩니다."
+        else -> "알던 사람과의 연락 비중은 낮게 보입니다."
+    }
+    return "$direction $known"
+}
+
+private fun routineBalanceText(appUsage: AppUsageSummary?): String {
+    if (appUsage == null || !appUsage.hasPermission) return "일상 균형을 보려면 생활 리듬 연결이 필요합니다."
+    return when {
+        appUsage.dailyAvgLateNightMin >= 60 -> "늦은 시간대 리듬이 흔들린 날이 있는 편입니다."
+        appUsage.weeklyChangePct >= 35f -> "지난주보다 디지털 생활 리듬이 늘어난 편입니다."
+        appUsage.weeklyChangePct <= -20f -> "지난주보다 디지털 생활 리듬이 줄어든 편입니다."
+        else -> "최근 일상 리듬은 비교적 비슷하게 유지되고 있습니다."
+    }
 }
 
 @Composable

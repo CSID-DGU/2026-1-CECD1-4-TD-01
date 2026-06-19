@@ -18,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.example.counseling.llm.ChatMessage
 import com.example.counseling.llm.ChatRole
 import com.example.counseling.ui.theme.CounselingTheme
@@ -75,6 +77,7 @@ private fun CounselingApp(
     var showThemeMenu by remember { mutableStateOf(false) }
     var chatChromeVisible by remember { mutableStateOf(true) }
     var settingsOpenRequests by remember { mutableStateOf(0) }
+    var presentationMode by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
@@ -84,13 +87,13 @@ private fun CounselingApp(
 
     Scaffold(
         topBar = {
-            AnimatedVisibility(visible = screen != AppScreen.Chat || chatChromeVisible) {
+            AnimatedVisibility(visible = screen != AppScreen.Chat || (chatChromeVisible && !imeVisible)) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("상담", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text(if (presentationMode) "On-mom" else "On-mom Dev", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "온디바이스 Gemma",
+                            if (presentationMode) "온마음 마음상담" else "개발자/디버그 화면",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -103,10 +106,17 @@ private fun CounselingApp(
                 actions = {
                     Box {
                         TextButton(
-                            onClick = { showThemeMenu = true },
+                            onClick = {
+                                if (screen == AppScreen.Chat) {
+                                    chatChromeVisible = true
+                                    settingsOpenRequests += 1
+                                } else {
+                                    showThemeMenu = true
+                                }
+                            },
                             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                         ) {
-                            Text(themeMode.label)
+                            Text(if (screen == AppScreen.Chat) "설정" else themeMode.label)
                         }
                         DropdownMenu(
                             expanded = showThemeMenu,
@@ -129,21 +139,23 @@ private fun CounselingApp(
         },
         bottomBar = {
             if (!imeVisible) {
-                NavigationBar {
-                    AppScreen.entries.forEach { item ->
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp,
+                ) {
+                    AppScreen.entries.filterNot { it == AppScreen.Settings }.forEach { item ->
                         NavigationBarItem(
-                            selected = screen == item && item != AppScreen.Settings,
-                            onClick = {
-                                if (item == AppScreen.Settings) {
-                                    screen = AppScreen.Chat
-                                    chatChromeVisible = true
-                                    settingsOpenRequests += 1
-                                } else {
-                                    screen = item
-                                }
-                            },
+                            selected = screen == item,
+                            onClick = { screen = item },
                             icon = { Text(item.icon) },
                             label = { Text(item.label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
                         )
                     }
                 }
@@ -158,15 +170,18 @@ private fun CounselingApp(
             ChatScreen(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
+                presentationMode = presentationMode,
+                onPresentationModeChange = { presentationMode = it },
                 chromeVisible = chatChromeVisible,
                 onChromeVisibleChange = { chatChromeVisible = it },
                 settingsOpenRequests = settingsOpenRequests,
+                imeVisible = imeVisible,
             )
             when (screen) {
                 AppScreen.Chat, AppScreen.Settings -> Unit
-                AppScreen.Gallery -> ScreenOverlay { GalleryScreen() }
+                AppScreen.Gallery -> ScreenOverlay { GalleryScreen(presentationMode = presentationMode) }
                 AppScreen.Health -> ScreenOverlay { HealthScreen() }
-                AppScreen.Phenotype -> ScreenOverlay { PhenotypeScreen() }
+                AppScreen.Phenotype -> ScreenOverlay { PhenotypeScreen(presentationMode = presentationMode) }
             }
         }
     }
