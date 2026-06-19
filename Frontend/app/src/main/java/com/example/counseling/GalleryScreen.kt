@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -48,7 +49,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun GalleryScreen() {
+fun GalleryScreen(presentationMode: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var images by remember { mutableStateOf<List<GalleryImage>>(emptyList()) }
@@ -141,10 +142,17 @@ fun GalleryScreen() {
     }
 
     if (showAnalysisDialog) {
-        GalleryAnalysisDialog(
-            cache = cache,
-            onDismiss = { showAnalysisDialog = false },
-        )
+        if (presentationMode) {
+            GalleryUserAnalysisDialog(
+                cache = cache,
+                onDismiss = { showAnalysisDialog = false },
+            )
+        } else {
+            GalleryAnalysisDialog(
+                cache = cache,
+                onDismiss = { showAnalysisDialog = false },
+            )
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -199,6 +207,7 @@ fun GalleryScreen() {
             cache = cache,
             enabled = access != GalleryAccess.None,
             busy = isLoadingGallery || isAnalyzingGallery,
+            presentationMode = presentationMode,
             onShow = { showAnalysisDialog = true },
             onRefresh = { loadImages(forceAnalysis = true) },
         )
@@ -222,6 +231,7 @@ private fun GalleryAnalysisSummaryCard(
     cache: GalleryAnalysisCacheSnapshot?,
     enabled: Boolean,
     busy: Boolean,
+    presentationMode: Boolean,
     onShow: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -233,23 +243,34 @@ private fun GalleryAnalysisSummaryCard(
         tonalElevation = 1.dp,
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Gallery 분석 문서", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (presentationMode) "내 갤러리 관심사" else "Gallery 분석 문서",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 text = if (cache == null) {
-                    "아직 저장된 분석 문서가 없습니다. 사진 권한을 허용하고 Gallery를 불러오면 자동으로 생성됩니다."
+                    if (presentationMode) {
+                        "사진 권한을 허용하면 사진 속 활동과 관심사를 간단히 정리해 보여줍니다."
+                    } else {
+                        "아직 저장된 분석 문서가 없습니다. 사진 권한을 허용하고 Gallery를 불러오면 자동으로 생성됩니다."
+                    }
                 } else {
                     "이미지 ${cache.imageCount}장 기준 · ${formatGalleryCacheTime(cache.updatedAt)} 갱신"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (presentationMode && cache != null) {
+                UserInterestPreview(cache.interestItems)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = onShow,
                     enabled = cache != null && !busy,
                     shape = RoundedCornerShape(8.dp),
                 ) {
-                    Text("분석 결과 보기")
+                    Text(if (presentationMode) "관심사 자세히" else "분석 결과 보기")
                 }
                 OutlinedButton(
                     onClick = onRefresh,
@@ -297,6 +318,126 @@ private fun GalleryAnalysisDialog(
             }
         },
     )
+}
+
+@Composable
+private fun GalleryUserAnalysisDialog(
+    cache: GalleryAnalysisCacheSnapshot?,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("갤러리 관심사") },
+        text = {
+            val scroll = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (cache == null) {
+                    Text("아직 정리된 관심사가 없습니다.")
+                } else {
+                    Text(
+                        "이미지 ${cache.imageCount}장 기준 · ${formatGalleryCacheTime(cache.updatedAt)} 갱신",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "사진 속에 반복해서 보이는 활동을 기준으로 가볍게 추정한 결과입니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    UserInterestList(cache.interestItems)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, shape = RoundedCornerShape(8.dp)) {
+                Text("닫기")
+            }
+        },
+    )
+}
+
+@Composable
+private fun UserInterestPreview(items: List<GalleryInterestItem>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (items.isEmpty()) {
+            Text(
+                "관심사 요약을 만들려면 다시 분석을 눌러 주세요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            items
+                .sortedByDescending { it.ratio * 0.7 + it.confidence * 0.3 }
+                .take(3)
+                .forEach { item ->
+                    UserInterestRow(item = item, compact = true)
+                }
+        }
+    }
+}
+
+@Composable
+private fun UserInterestList(items: List<GalleryInterestItem>) {
+    val sorted = items.sortedByDescending { it.ratio * 0.7 + it.confidence * 0.3 }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (sorted.isEmpty()) {
+            Text(
+                "이전 형식의 분석 결과입니다. 갤러리 화면에서 다시 분석하면 관심사 요약을 볼 수 있습니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            sorted.forEach { item ->
+                UserInterestRow(item = item, compact = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserInterestRow(item: GalleryInterestItem, compact: Boolean) {
+    val progress = ((item.ratio * 0.7) + (item.confidence * 0.3)).coerceIn(0.0, 1.0).toFloat()
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = if (compact) 9.dp else 12.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    item.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    item.level,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (!compact) {
+                Text(
+                    "사진 ${item.photoCount}장 · 활동 ${item.eventCount}회 · 비중 ${(item.ratio * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 @Composable

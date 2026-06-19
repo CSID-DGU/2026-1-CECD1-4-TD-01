@@ -42,16 +42,19 @@ class LiteRtVoiceEmotionAnalyzer(
     private val modelFileName: String = "voice_emotion.tflite",
     private val maxSamples: Int = 16000 * 12,
 ) : AutoCloseable {
-    private var interpreter: Interpreter? = null
-
     suspend fun analyze(audioFile: File): VoiceEmotionResult? = withContext(Dispatchers.Default) {
-        val model = loadInterpreterOrNull() ?: return@withContext null
         val waveform = readWavAsFixedMonoFloat32(audioFile, maxSamples)
         if (waveform.isEmpty()) return@withContext null
 
         val input = arrayOf(waveform)
         val output = Array(1) { FloatArray(VoiceEmotion.entries.size) }
-        model.run(input, output)
+        val buffer = runCatching { mapModelFile() }.getOrNull() ?: return@withContext null
+        val model = Interpreter(buffer)
+        try {
+            model.run(input, output)
+        } finally {
+            model.close()
+        }
 
         val probabilities = softmax(output[0])
         val bestIndex = probabilities.indices.maxByOrNull { probabilities[it] } ?: return@withContext null
@@ -99,14 +102,7 @@ class LiteRtVoiceEmotionAnalyzer(
     }
 
     override fun close() {
-        interpreter?.close()
-        interpreter = null
-    }
-
-    private fun loadInterpreterOrNull(): Interpreter? {
-        interpreter?.let { return it }
-        val buffer = runCatching { mapModelFile() }.getOrNull() ?: return null
-        return Interpreter(buffer).also { interpreter = it }
+        // The voice TFLite asset is large, so analyze() owns and closes each interpreter.
     }
 
     private fun mapModelFile(): MappedByteBuffer {

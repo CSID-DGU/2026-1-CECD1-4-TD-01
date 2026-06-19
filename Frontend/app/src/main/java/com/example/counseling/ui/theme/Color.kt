@@ -10,7 +10,10 @@ val Blue40 = Color(0xFF246B73)
 val Teal40 = Color(0xFF4D7C5F)
 val Coral40 = Color(0xFFB45741)
 
-val LightBackground = Color(0xFFF4F7F6)
+val LightBackground = Color(0xFFFAFBFA)
 val LightSurface = Color(0xFFFFFFFF)
 val DarkBackground = Color(0xFF121716)
 val DarkSurface = Color(0xFF1E2624)
+
+val Ink = Color(0xFF171A1C)
+val MutedInk = Color(0xFF5F686B)

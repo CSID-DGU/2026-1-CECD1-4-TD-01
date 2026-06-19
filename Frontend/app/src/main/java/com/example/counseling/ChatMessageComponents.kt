@@ -1,6 +1,7 @@
 package com.example.counseling
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -87,24 +88,31 @@ fun MessageBubble(message: ChatMessage, fontSize: ChatFontSize = ChatFontSize.No
     ) {
         Surface(
             shape = RoundedCornerShape(8.dp),
-            color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-            contentColor = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
+            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = if (isUser) 0.dp else 1.dp,
             shadowElevation = if (isUser) 0.dp else 1.dp,
-            modifier = Modifier.fillMaxWidth(if (isUser) 0.82f else 0.9f),
+            modifier = Modifier
+                .fillMaxWidth(if (isUser) 0.82f else 0.94f)
+                .border(
+                    width = 1.dp,
+                    color = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outlineVariant,
+                    shape = RoundedCornerShape(8.dp),
+                ),
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp)) {
                 Text(
-                    text = if (isUser) "나" else "상담 챗봇",
+                    text = if (isUser) "나" else "상담사",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isUser) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary,
+                    color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary,
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = markdownText(message.content),
                     style = MaterialTheme.typography.bodyLarge,
                     fontSize = fontSize.sizeSp.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 if (message.content.isNotBlank()) {
                     Spacer(modifier = Modifier.height(6.dp))
@@ -120,7 +128,7 @@ fun MessageBubble(message: ChatMessage, fontSize: ChatFontSize = ChatFontSize.No
                     Spacer(modifier = Modifier.height(6.dp))
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (isUser) Color.White.copy(alpha = 0.16f) else MaterialTheme.colorScheme.secondaryContainer,
+                        color = if (isUser) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.secondaryContainer,
                     ) {
                         Text(
                             text = message.attachmentLabel,
