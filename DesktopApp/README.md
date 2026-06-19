@@ -120,7 +120,7 @@ python .\DesktopApp\app.py --self-test-external-llm
 
 1. `python .\DesktopApp\app.py`로 앱을 실행합니다.
 2. 상담 탭에서 메시지를 입력합니다.
-3. 첫 응답에서 LLM 모델이 로드됩니다. 상태 문구가 `LiteRT-LM 엔진 로드 완료`로 바뀌면 모델 로드가 끝난 상태입니다.
+3. `litert-lm-api`가 설치되어 있으면 앱 실행 직후 백그라운드에서 LLM 엔진을 미리 로드합니다. 상태 문구가 `LiteRT-LM 엔진 로드 완료` 또는 `LiteRT-LM 엔진 이미 로드됨`으로 바뀌면 이후 응답에서는 같은 엔진을 재사용합니다.
 4. 갤러리 탭에서 이미지 파일이나 폴더를 선택하면 이미지 요약이 상담 맥락에 반영됩니다.
 5. 음성 탭에서 WAV 파일을 선택하면 감정 분석 결과가 상담 맥락에 반영됩니다.
 6. 중요 기억 탭에서 계속 참고할 내용을 저장합니다.
@@ -141,7 +141,7 @@ python .\DesktopApp\app.py --self-test-external-llm
 - 모델 파일이 `LLMmodels/models/gemma-4-E4B-it.litertlm`에 있는지 확인합니다.
 - `python -m pip show litert-lm-api`로 LiteRT-LM Python 패키지가 설치되어 있는지 확인합니다.
 - GPU backend에서 응답이 안 나오면 `COUNSELING_LLM_BACKEND=cpu`로 다시 실행합니다.
-- 첫 실행은 캐시 생성 때문에 오래 걸릴 수 있으니 `--self-test-llm`로 먼저 확인하면 원인을 보기 쉽습니다.
+- 첫 실행은 캐시 생성 때문에 오래 걸릴 수 있습니다. Python API 경로는 엔진을 한 번 로드한 뒤 재사용하지만, `litert-lm` CLI 또는 외부 명령 경로는 요청마다 새 프로세스를 실행하므로 모델을 매번 다시 로드할 수 있습니다.
 - PowerShell 출력 인코딩 문제는 앱에서 UTF-8로 보정합니다.
 
 ## 주의

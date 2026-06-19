@@ -227,6 +227,7 @@ class LlmAdapter:
         return self.status
 
     def close(self) -> None:
+        retry_error: Exception | None = None
         with self._lock:
             engine = self._engine
             context = self._engine_context
@@ -249,23 +250,55 @@ class LlmAdapter:
         if self._litert_lm is not None:
             return (
                 f"LLM 모델 파일 감지: {model_desc}. "
-                f"LiteRT-LM Python API 준비됨, backend={self.backend_name}."
+                f"LiteRT-LM Python API 준비됨, backend={self.backend_name}. 엔진은 한 번 로드 후 재사용합니다."
             )
         if self.external_command:
             return (
                 f"LLM 모델 파일 감지: {model_desc}. "
-                "COUNSELING_LLM_COMMAND/설정의 외부 런타임 명령을 사용합니다."
+                "외부 런타임 명령을 사용합니다. 이 경로는 요청마다 새 프로세스를 실행하므로 모델을 매번 다시 로드할 수 있습니다."
             )
         cli_path = self.runtime_diagnostics.get("litert_lm_cli")
         if cli_path:
             return (
                 f"LLM 모델 파일 감지: {model_desc}. "
-                f"LiteRT-LM CLI를 사용합니다: {cli_path}"
+                f"LiteRT-LM CLI를 사용합니다: {cli_path}. CLI 경로는 요청마다 새 프로세스를 실행하므로 모델을 매번 다시 로드합니다."
             )
         return (
             f"LLM 모델 파일 감지: {model_desc}. "
             "실제 생성에는 litert-lm-api 설치가 필요합니다. 설치 전에는 규칙 기반 fallback으로 동작합니다."
         )
+
+    def runtime_mode(self) -> str:
+        if self._litert_lm is not None and self.model_path.exists():
+            return "python-api-persistent"
+        if self.external_command:
+            return "external-command-per-request"
+        if self.runtime_diagnostics.get("litert_lm_cli") and self.model_path.exists():
+            return "cli-per-request"
+        return "fallback"
+
+    def preload(self) -> str:
+        if self._litert_lm is None:
+            self.status = self._detect_status()
+            return self.status
+        if not self.model_path.exists():
+            self.status = f"LLM 모델 파일을 찾지 못했습니다: {self.model_path}"
+            return self.status
+        with self._lock:
+            if self._engine is not None:
+                self.status = f"LiteRT-LM 엔진 이미 로드됨: {self.model_path.name}, backend={self.backend_name}"
+                return self.status
+            self.status = f"LiteRT-LM 엔진 미리 로드 중: {self.model_path.name}, backend={self.backend_name}"
+            try:
+                self._ensure_engine(self._litert_lm)
+                return self.status
+            except Exception as error:
+                if not self._should_retry_on_cpu(error):
+                    raise
+                retry_error = error
+        if retry_error is not None:
+            self._switch_to_cpu_backend(retry_error)
+        return self.preload()
 
     def generate(
         self,
@@ -284,6 +317,14 @@ class LlmAdapter:
                 if result:
                     return result
             except Exception as error:
+                if self._should_retry_on_cpu(error):
+                    try:
+                        self._switch_to_cpu_backend(error)
+                        result = self._generate_with_python_api(prompt, stream_callback)
+                        if result:
+                            return result
+                    except Exception as cpu_error:
+                        error = cpu_error
                 self.status = f"LiteRT-LM Python API 실행 실패: {error}"
                 error_reply = (
                     "LLM 실행 중 오류가 났습니다.\n\n"
@@ -316,6 +357,32 @@ class LlmAdapter:
         if stream_callback is not None:
             stream_callback(fallback)
         return fallback
+
+    def _should_retry_on_cpu(self, error: Exception) -> bool:
+        if self.backend_name == "cpu":
+            return False
+        message = str(error).lower()
+        return (
+            ("device" in message and "lost" in message)
+            or "vulkan" in message
+            or "gpu" in message
+        )
+
+    def _switch_to_cpu_backend(self, error: Exception) -> None:
+        previous_backend = self.backend_name
+        self.close()
+        self.backend_name = "cpu"
+        save_llm_settings(
+            {
+                "model_path": str(self.model_path),
+                "backend": self.backend_name,
+                "enable_speculative_decoding": self.enable_speculative_decoding,
+                "external_command": self.external_command,
+            }
+        )
+        self.status = (
+            f"{previous_backend.upper()} backend 오류로 CPU backend로 전환했습니다: {error}"
+        )
 
     def _generate_with_python_api(
         self,
@@ -420,6 +487,7 @@ class CounselingDesktopApp(tk.Tk):
         self._render_loaded_messages()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.after(80, self._process_queue)
+        self._start_llm_preload()
 
     def _build_style(self) -> None:
         self.configure(bg="#f4f7f6")
@@ -637,6 +705,8 @@ class CounselingDesktopApp(tk.Tk):
             "llm_backend": self.llm.backend_name,
             "llm_speculative_decoding": self.llm.enable_speculative_decoding,
             "llm_status": self.llm.status,
+            "llm_runtime_mode": self.llm.runtime_mode(),
+            "llm_engine_loaded": self.llm._engine is not None,
             "llm_external_command": self.llm.external_command or None,
             "llm_settings_file": str(llm_settings_file()),
             "llm_runtime_diagnostics": self.llm.runtime_diagnostics,
@@ -678,7 +748,31 @@ class CounselingDesktopApp(tk.Tk):
         self.chat_status.configure(text=status)
         self._refresh_settings_text()
         self.refresh_prompt_preview()
+        self._start_llm_preload()
         messagebox.showinfo(APP_TITLE, status)
+
+    def _start_llm_preload(self) -> None:
+        if self.llm.runtime_mode() != "python-api-persistent":
+            self.chat_status.configure(text=self.llm.status)
+            self._refresh_settings_text()
+            return
+        self.chat_status.configure(text=f"LLM 엔진 미리 로드 중... {self.llm.model_path.name}")
+        self._refresh_settings_text()
+        threading.Thread(target=self._preload_llm_worker, daemon=True).start()
+
+    def _preload_llm_worker(self) -> None:
+        try:
+            status = self.llm.preload()
+        except Exception as error:
+            status = f"LLM 엔진 미리 로드 실패: {error}"
+            self.llm.status = status
+        self.queue.put(lambda status=status: self._finish_llm_preload(status))
+
+    def _finish_llm_preload(self, status: str) -> None:
+        if not self.chat_busy:
+            self.chat_status.configure(text=status)
+        self._refresh_settings_text()
+        self.refresh_prompt_preview()
 
     def test_llm_runtime(self) -> None:
         self.chat_status.configure(text="LLM 짧은 테스트 중...")
@@ -833,7 +927,12 @@ class CounselingDesktopApp(tk.Tk):
         self.messages.append(ChatMessage("user", content))
         self._append_chat("나", content)
         save_session(self.session_id, self.messages, self.memories)
-        self.chat_status.configure(text="LLM 로딩/응답 생성 중... 첫 실행은 1분 이상 걸릴 수 있습니다.")
+        if self.llm.runtime_mode() == "python-api-persistent" and self.llm._engine is not None:
+            self.chat_status.configure(text="LLM 응답 생성 중...")
+        elif self.llm.runtime_mode() in {"cli-per-request", "external-command-per-request"}:
+            self.chat_status.configure(text="LLM 응답 생성 중... 현재 런타임은 요청마다 모델을 다시 로드할 수 있습니다.")
+        else:
+            self.chat_status.configure(text="LLM 로딩/응답 생성 중... 첫 실행은 1분 이상 걸릴 수 있습니다.")
         self._start_chat_stream()
         self.refresh_prompt_preview()
         threading.Thread(target=self._chat_worker, daemon=True).start()
