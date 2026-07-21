@@ -52,24 +52,26 @@ fun MessageInput2(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        tonalElevation = 4.dp,
-        shadowElevation = 2.dp,
+        tonalElevation = 0.dp,
+        shadowElevation = 10.dp,
         color = MaterialTheme.colorScheme.surface,
         modifier = modifier
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f), RoundedCornerShape(30.dp)),
+        shape = RoundedCornerShape(30.dp),
     ) {
         Column(
             modifier = Modifier.padding(
-                start = 14.dp,
-                top = 12.dp,
-                end = 14.dp,
-                bottom = 14.dp + if (imeBottomPadding == Dp.Unspecified) 0.dp else imeBottomPadding,
+                start = 10.dp,
+                top = 10.dp,
+                end = 10.dp,
+                bottom = 10.dp + if (imeBottomPadding == Dp.Unspecified) 0.dp else imeBottomPadding,
             ),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (attachmentLabel != null) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(20.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -99,27 +101,27 @@ fun MessageInput2(
                     minLines = 1,
                     maxLines = 5,
                     textStyle = TextStyle(fontSize = fontSize.sizeSp.sp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(25.dp),
                     placeholder = {
                         Text(if (presentationMode) "지금 마음에 남아 있는 일을 적어 주세요" else "메시지를 입력하세요")
                     },
                 )
                 OutlinedButton(
                     onClick = onToggleChrome,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.widthIn(min = 70.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.widthIn(min = 58.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = if (chromeHidden) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (chromeHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                 ) {
-                    Text(if (chromeHidden) "UI 표시" else "UI 숨김")
+                    Text(if (chromeHidden) "표시" else "숨김")
                 }
                 Button(
                     onClick = onSend,
                     enabled = enabled && !isRecordingAudio && !isThinking && (value.isNotBlank() || attachmentLabel != null),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.widthIn(min = 72.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.widthIn(min = 58.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -135,7 +137,7 @@ fun MessageInput2(
                     OutlinedButton(
                         onClick = onSpeechInput,
                         enabled = enabled,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(22.dp),
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -149,7 +151,7 @@ fun MessageInput2(
                     OutlinedButton(
                         onClick = onRecordAudio,
                         enabled = enabled || isRecordingAudio,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(22.dp),
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = if (isRecordingAudio) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
@@ -164,7 +166,7 @@ fun MessageInput2(
                         OutlinedButton(
                             onClick = onCycleThinkingMode,
                             enabled = enabled,
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(22.dp),
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(thinkingMode.label)

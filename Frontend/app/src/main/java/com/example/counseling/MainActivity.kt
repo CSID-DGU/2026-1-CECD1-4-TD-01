@@ -5,12 +5,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -32,7 +40,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -88,77 +99,26 @@ private fun CounselingApp(
     Scaffold(
         topBar = {
             AnimatedVisibility(visible = screen != AppScreen.Chat || (chatChromeVisible && !imeVisible)) {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(if (presentationMode) "On-mom" else "On-mom Dev", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (presentationMode) "온마음 마음상담" else "개발자/디버그 화면",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                actions = {
-                    Box {
-                        TextButton(
-                            onClick = {
-                                if (screen == AppScreen.Chat) {
-                                    chatChromeVisible = true
-                                    settingsOpenRequests += 1
-                                } else {
-                                    showThemeMenu = true
-                                }
-                            },
-                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                        ) {
-                            Text(if (screen == AppScreen.Chat) "설정" else themeMode.label)
-                        }
-                        DropdownMenu(
-                            expanded = showThemeMenu,
-                            onDismissRequest = { showThemeMenu = false },
-                        ) {
-                            AppThemeMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text(mode.label) },
-                                    onClick = {
-                                        showThemeMenu = false
-                                        onThemeModeChange(mode)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                },
-            )
+                OnMomTopChrome(
+                    presentationMode = presentationMode,
+                    screen = screen,
+                    themeMode = themeMode,
+                    showThemeMenu = showThemeMenu,
+                    onToggleThemeMenu = { showThemeMenu = it },
+                    onChatSettings = {
+                        chatChromeVisible = true
+                        settingsOpenRequests += 1
+                    },
+                    onThemeModeChange = onThemeModeChange,
+                )
             }
         },
         bottomBar = {
             if (!imeVisible) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp,
-                ) {
-                    AppScreen.entries.filterNot { it == AppScreen.Settings }.forEach { item ->
-                        NavigationBarItem(
-                            selected = screen == item,
-                            onClick = { screen = item },
-                            icon = { Text(item.icon) },
-                            label = { Text(item.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
-                    }
-                }
+                OnMomBottomTabs(
+                    selected = screen,
+                    onSelect = { screen = it },
+                )
             }
         },
     ) { innerPadding ->
@@ -182,6 +142,141 @@ private fun CounselingApp(
                 AppScreen.Gallery -> ScreenOverlay { GalleryScreen(presentationMode = presentationMode) }
                 AppScreen.Health -> ScreenOverlay { HealthScreen() }
                 AppScreen.Phenotype -> ScreenOverlay { PhenotypeScreen(presentationMode = presentationMode) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnMomTopChrome(
+    presentationMode: Boolean,
+    screen: AppScreen,
+    themeMode: AppThemeMode,
+    showThemeMenu: Boolean,
+    onToggleThemeMenu: (Boolean) -> Unit,
+    onChatSettings: () -> Unit,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .shadow(14.dp, RoundedCornerShape(28.dp), clip = false)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(28.dp)),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        Text("온", fontWeight = FontWeight.Bold)
+                    }
+                }
+                Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
+                    Text(
+                        if (presentationMode) "On-mom" else "On-mom Dev",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        if (presentationMode) "온마음 마음상담" else "개발자 관찰 화면",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Box {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            if (screen == AppScreen.Chat) onChatSettings() else onToggleThemeMenu(true)
+                        },
+                    ) {
+                        Text(
+                            text = if (screen == AppScreen.Chat) "설정" else themeMode.label,
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showThemeMenu,
+                        onDismissRequest = { onToggleThemeMenu(false) },
+                    ) {
+                        AppThemeMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(mode.label) },
+                                onClick = {
+                                    onToggleThemeMenu(false)
+                                    onThemeModeChange(mode)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnMomBottomTabs(
+    selected: AppScreen,
+    onSelect: (AppScreen) -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .shadow(18.dp, RoundedCornerShape(30.dp), clip = false)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f), RoundedCornerShape(30.dp)),
+            shape = RoundedCornerShape(30.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        ) {
+            Row(
+                modifier = Modifier.padding(6.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                AppScreen.entries.filterNot { it == AppScreen.Settings }.forEach { item ->
+                    val isSelected = selected == item
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onSelect(item) },
+                        shape = RoundedCornerShape(24.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                        ) {
+                            Text(item.icon, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                item.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.Center,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

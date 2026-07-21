@@ -334,7 +334,7 @@ fun ChatSettingsDialog(
 
                 item {
                     Text(
-                        text = if (presentationMode) "v1.0.7 사용자 화면" else "v1.0.7 개발자 화면",
+                        text = if (presentationMode) "v1.0.8 사용자 화면" else "v1.0.8 개발자 화면",
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp)

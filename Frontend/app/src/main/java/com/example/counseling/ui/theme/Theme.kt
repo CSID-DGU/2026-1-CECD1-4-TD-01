@@ -49,13 +49,13 @@ private fun lightOnMomColorScheme(
 )
 
 private val LightColorScheme = lightOnMomColorScheme(
-    primary = Color(0xFF176C72),
-    secondary = Color(0xFF54715D),
-    tertiary = Color(0xFF9D5A44),
-    primaryContainer = Color(0xFFD9F0F1),
-    secondaryContainer = Color(0xFFE1EEDF),
-    tertiaryContainer = Color(0xFFFFDFD4),
-    surfaceVariant = Color(0xFFEEF3F2),
+    primary = Color(0xFF007AFF),
+    secondary = Color(0xFF34C759),
+    tertiary = Color(0xFFFF9F0A),
+    primaryContainer = Color(0xFFD8E9FF),
+    secondaryContainer = Color(0xFFDFF7E7),
+    tertiaryContainer = Color(0xFFFFE6BF),
+    surfaceVariant = Color(0xFFF0F2F7),
 )
 
 private val SageColorScheme = lightOnMomColorScheme(

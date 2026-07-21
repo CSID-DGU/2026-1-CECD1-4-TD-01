@@ -42,9 +42,9 @@ fun CompactActionButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(18.dp),
         modifier = modifier,
-        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Text(text)
     }
@@ -57,7 +57,7 @@ fun StatusPill(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(18.dp),
         color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier,
@@ -82,43 +82,51 @@ fun StatusPill(
 fun MessageBubble(message: ChatMessage, fontSize: ChatFontSize = ChatFontSize.Normal) {
     val isUser = message.role == ChatRole.User
     val clipboard = LocalClipboardManager.current
+    val bubbleShape = if (isUser) {
+        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 7.dp)
+    } else {
+        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 7.dp, bottomEnd = 24.dp)
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
         Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = bubbleShape,
+            color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+            contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
             tonalElevation = if (isUser) 0.dp else 1.dp,
-            shadowElevation = if (isUser) 0.dp else 1.dp,
+            shadowElevation = if (isUser) 2.dp else 4.dp,
             modifier = Modifier
-                .fillMaxWidth(if (isUser) 0.82f else 0.94f)
+                .fillMaxWidth(if (isUser) 0.84f else 0.94f)
                 .border(
                     width = 1.dp,
-                    color = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f) else MaterialTheme.colorScheme.outlineVariant,
-                    shape = RoundedCornerShape(8.dp),
+                    color = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+                    shape = bubbleShape,
                 ),
         ) {
-            Column(modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 17.dp, vertical = 14.dp)) {
                 Text(
                     text = if (isUser) "나" else "상담사",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary,
+                    color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f) else MaterialTheme.colorScheme.primary,
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = markdownText(message.content),
                     style = MaterialTheme.typography.bodyLarge,
                     fontSize = fontSize.sizeSp.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                 )
                 if (message.content.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(
                             onClick = { clipboard.setText(AnnotatedString(message.content)) },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f) else MaterialTheme.colorScheme.primary,
+                            ),
                         ) {
                             Text("복사")
                         }
@@ -127,8 +135,8 @@ fun MessageBubble(message: ChatMessage, fontSize: ChatFontSize = ChatFontSize.No
                 if (message.attachmentLabel != null) {
                     Spacer(modifier = Modifier.height(6.dp))
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isUser) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.secondaryContainer,
                     ) {
                         Text(
                             text = message.attachmentLabel,

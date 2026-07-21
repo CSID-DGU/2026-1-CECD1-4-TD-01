@@ -601,8 +601,8 @@ fun ChatScreen(
                 .weight(1f)
                 .background(MaterialTheme.colorScheme.background),
             state = listState,
-            contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(11.dp),
         ) {
             items(messages) { message ->
                 MessageBubble(message = message, fontSize = chatFontSize)
@@ -798,16 +798,16 @@ private fun UserPresentationHeader(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            shape = RoundedCornerShape(8.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 1.dp,
-            shadowElevation = 2.dp,
+            shadowElevation = 8.dp,
         ) {
             Column(
                 modifier = Modifier
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
-                    .padding(16.dp),
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f), RoundedCornerShape(28.dp))
+                    .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Row(
@@ -816,21 +816,21 @@ private fun UserPresentationHeader(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
-                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)),
+                            .size(48.dp)
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             "온",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.onPrimary,
                         )
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "오늘의 마음 대화",
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
@@ -845,7 +845,7 @@ private fun UserPresentationHeader(
                     }
                     OutlinedButton(
                         onClick = onOpenSettings,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(20.dp),
                         modifier = Modifier.widthIn(min = 64.dp),
                     ) {
                         Text("설정")
@@ -876,45 +876,54 @@ private fun DeveloperStatusHeader(
     onOpenSettings: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
-        Column(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 5.dp,
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f), RoundedCornerShape(24.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (modelReady) "개발자 화면: 모델 준비 완료" else "개발자 화면: 모델을 불러오면 대화를 시작합니다",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = if (isRecordingAudio) "음성을 듣고 있습니다. 녹음 종료를 누르면 분석에 첨부됩니다." else statusMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (modelReady) "개발자 화면 · 모델 준비" else "개발자 화면 · 모델 필요",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = if (isRecordingAudio) "음성을 듣고 있습니다. 녹음 종료를 누르면 분석에 첨부됩니다." else statusMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = onOpenSettings) {
+                        Text("설정")
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    StatusPill(text = if (modelReady) "온디바이스" else "모델 필요", active = modelReady)
+                    DemoContextChip(text = if (isRecordingAudio) "녹음 중" else "음성 인식")
+                    DemoContextChip(
+                        text = buildList {
+                            if (includeHealthContext) add("건강 ${healthContextPeriod.label}")
+                            if (includePhenotypeContext) add("생활 패턴")
+                            if (includeGalleryAnalysisContext) add("갤러리")
+                        }.ifEmpty { listOf("맥락 선택 가능") }.joinToString(" · "),
                     )
                 }
-                TextButton(onClick = onOpenSettings) {
-                    Text("설정")
-                }
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                StatusPill(text = if (modelReady) "온디바이스" else "모델 필요", active = modelReady)
-                DemoContextChip(text = if (isRecordingAudio) "녹음 중" else "음성 인식")
-                DemoContextChip(
-                    text = buildList {
-                        if (includeHealthContext) add("건강 ${healthContextPeriod.label}")
-                        if (includePhenotypeContext) add("생활 패턴")
-                        if (includeGalleryAnalysisContext) add("갤러리")
-                    }.ifEmpty { listOf("맥락 선택 가능") }.joinToString(" · "),
-                )
             }
         }
     }
@@ -923,7 +932,7 @@ private fun DeveloperStatusHeader(
 @Composable
 private fun DemoContextChip(text: String) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
