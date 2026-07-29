@@ -65,27 +65,26 @@ fun HealthScreen() {
             ),
         )
     }
+    var extendedOverview by remember {
+        mutableStateOf(ExtendedHealthOverview(period = selectedPeriod))
+    }
     var isLoading by remember { mutableStateOf(false) }
 
     fun loadHealthData(period: HealthPeriod = selectedPeriod) {
         scope.launch {
             isLoading = true
             summary = readHealthSummary(context, period)
+            extendedOverview = readExtendedHealthOverview(context, period)
             isLoading = false
         }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract(),
-        onResult = { granted ->
-            if (granted.containsAll(healthPermissions)) loadHealthData()
-            else summary = summary.copy(message = "건강 데이터 권한이 모두 허용되지 않았습니다.")
+        onResult = {
+            loadHealthData()
         },
     )
-
-    LaunchedEffect(Unit) {
-        summary = readHealthSummary(context, selectedPeriod)
-    }
 
     LaunchedEffect(selectedPeriod) {
         loadHealthData(selectedPeriod)
@@ -109,7 +108,7 @@ fun HealthScreen() {
                     onClick = {
                         scope.launch {
                             when (HealthConnectClient.getSdkStatus(context)) {
-                                HealthConnectClient.SDK_AVAILABLE -> permissionLauncher.launch(healthPermissions)
+                                HealthConnectClient.SDK_AVAILABLE -> permissionLauncher.launch(allHealthPermissions)
                                 HealthConnectClient.SDK_UNAVAILABLE -> {
                                     summary = summary.copy(message = "이 기기에서는 Health Connect를 사용할 수 없습니다.")
                                 }
@@ -169,14 +168,14 @@ fun HealthScreen() {
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HealthMetric("걸음", "%,d".format(summary.steps), modifier = Modifier.weight(1f))
-                HealthMetric("거리", "%,.1f km".format(summary.distanceKm), modifier = Modifier.weight(1f))
+                HealthMetric("걸음", summary.formattedMetric(HealthMetricKind.Steps), modifier = Modifier.weight(1f))
+                HealthMetric("거리", summary.formattedMetric(HealthMetricKind.Distance), modifier = Modifier.weight(1f))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HealthMetric("활동 칼로리", "%,.0f kcal".format(summary.activeCaloriesKcal), modifier = Modifier.weight(1f))
-                HealthMetric("수면", "%,.1f 시간".format(summary.sleepHours), modifier = Modifier.weight(1f))
+                HealthMetric("활동 칼로리", summary.formattedMetric(HealthMetricKind.ActiveCalories), modifier = Modifier.weight(1f))
+                HealthMetric("수면", summary.formattedMetric(HealthMetricKind.Sleep), modifier = Modifier.weight(1f))
             }
         }
         item {
@@ -186,15 +185,95 @@ fun HealthScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        item {
+            ExtendedHealthOverviewSection(overview = extendedOverview)
+        }
+    }
+}
+
+@Composable
+fun ExtendedHealthOverviewSection(overview: ExtendedHealthOverview) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Health Connect 수신 현황", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    overview.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    "출처·기기 정보는 이 화면에서만 확인합니다. 운동 GPS 경로와 원본 센서 배열은 읽거나 Jetson으로 보내지 않습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
+        overview.snapshots.groupBy { it.category }.forEach { (category, snapshots) ->
+            Text(category.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            snapshots.forEach { snapshot ->
+                HealthDataSnapshotCard(snapshot)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthDataSnapshotCard(snapshot: HealthDataSnapshot) {
+    val statusColor = when (snapshot.availability) {
+        HealthDataAvailability.Received -> MaterialTheme.colorScheme.primary
+        HealthDataAvailability.NoData -> MaterialTheme.colorScheme.onSurfaceVariant
+        HealthDataAvailability.PermissionRequired -> MaterialTheme.colorScheme.tertiary
+        HealthDataAvailability.Error -> MaterialTheme.colorScheme.error
+    }
+    Surface(shape = RoundedCornerShape(8.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    snapshot.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    if (snapshot.availability == HealthDataAvailability.Received) {
+                        "${snapshot.availability.label} ${snapshot.recordCount}건"
+                    } else {
+                        snapshot.availability.label
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = statusColor,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(snapshot.summary, style = MaterialTheme.typography.bodyMedium)
+            val details = buildList {
+                snapshot.latest?.let { add("최근 동기화/수정 $it") }
+                snapshot.sources.takeIf { it.isNotEmpty() }?.let { add("출처 ${it.joinToString()}") }
+            }
+            if (details.isNotEmpty()) {
+                Text(
+                    details.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
 @Composable
 fun YouthActivityGoalCard(summary: HealthSummary) {
     val days = summary.daily
-    val achievedDays = days.count { it.estimatedActivityMinutes() >= YouthDailyActivityGoalMinutes }
-    val averageMinutes = days.takeIf { it.isNotEmpty() }?.map { it.estimatedActivityMinutes() }?.average() ?: 0.0
-    val progress = if (days.isEmpty()) 0f else (achievedDays.toFloat() / days.size).coerceIn(0f, 1f)
+    val validDays = days.filter { it.hasValidMetric(HealthMetricKind.Steps) }
+    val activityMinutes = validDays.mapNotNull { it.estimatedActivityMinutes() }
+    val achievedDays = activityMinutes.count { it >= YouthDailyActivityGoalMinutes }
+    val averageMinutes = activityMinutes.takeIf { it.isNotEmpty() }?.average()
+    val progress = if (validDays.isEmpty()) 0f else (achievedDays.toFloat() / validDays.size).coerceIn(0f, 1f)
 
     Surface(shape = RoundedCornerShape(8.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -206,15 +285,21 @@ fun YouthActivityGoalCard(summary: HealthSummary) {
             )
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "${achievedDays}/${days.size}",
+                    if (validDays.isEmpty()) "기록 없음" else "${achievedDays}/${validDays.size}",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )
-                Text("일 달성", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (validDays.isNotEmpty()) {
+                    Text("일 달성", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
             Text(
-                "평균 ${averageMinutes.toInt()}분/일 · 걸음 수 기반 추정치",
+                if (averageMinutes == null) {
+                    "0 또는 누락된 날은 목표 계산에서 제외됩니다."
+                } else {
+                    "평균 ${averageMinutes.toInt()}분/일 · 유효한 걸음 기록 ${validDays.size}일 기준"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -282,12 +367,12 @@ fun HealthCalendarCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val minutes = day?.estimatedActivityMinutes() ?: 0
-    val achieved = minutes >= YouthDailyActivityGoalMinutes
+    val minutes = day?.estimatedActivityMinutes()
+    val achieved = minutes != null && minutes >= YouthDailyActivityGoalMinutes
     val cellColor = when {
         !inPeriod -> MaterialTheme.colorScheme.surface
         achieved -> MaterialTheme.colorScheme.primaryContainer
-        minutes > 0 -> MaterialTheme.colorScheme.secondaryContainer
+        minutes != null -> MaterialTheme.colorScheme.secondaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
     val textColor = if (inPeriod) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
@@ -319,7 +404,11 @@ fun HealthCalendarCell(
                     ),
             )
             Text(
-                if (day == null) "" else "${minutes}분",
+                when {
+                    day == null -> ""
+                    minutes == null -> "기록 없음"
+                    else -> "${minutes}분"
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = textColor,
                 textAlign = TextAlign.Center,
@@ -355,15 +444,15 @@ fun HealthDayCard(day: HealthDaySummary, onClick: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "걸음 %,d · 거리 %,.2f km".format(day.steps, day.distanceKm),
+                text = "걸음 ${day.formattedMetric(HealthMetricKind.Steps)} · 거리 ${day.formattedMetric(HealthMetricKind.Distance)}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "총 %,.1f kcal · 활동 %,.1f kcal".format(day.caloriesKcal, day.activeCaloriesKcal),
+                text = "총 ${day.formattedMetric(HealthMetricKind.Calories)} · 활동 ${day.formattedMetric(HealthMetricKind.ActiveCalories)}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "심박 ${day.heartRateBpm?.let { "%d bpm".format(it) } ?: "데이터 없음"} · 수면 %,.1f 시간".format(day.sleepHours),
+                text = "심박 ${day.formattedMetric(HealthMetricKind.HeartRate)} · 수면 ${day.formattedMetric(HealthMetricKind.Sleep)}",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -373,7 +462,7 @@ fun HealthDayCard(day: HealthDaySummary, onClick: () -> Unit) {
 @Composable
 fun HealthDayDetailDialog(day: HealthDaySummary, onDismiss: () -> Unit) {
     val minutes = day.estimatedActivityMinutes()
-    val achieved = minutes >= YouthDailyActivityGoalMinutes
+    val achieved = minutes != null && minutes >= YouthDailyActivityGoalMinutes
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(day.date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))) },
@@ -386,22 +475,37 @@ fun HealthDayDetailDialog(day: HealthDaySummary, onDismiss: () -> Unit) {
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            if (achieved) "목표 달성" else "목표 미달",
+                            when {
+                                minutes == null -> "활동 기록 없음"
+                                achieved -> "목표 달성"
+                                else -> "목표 미달"
+                            },
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "추정 활동 ${minutes}분 / 목표 ${YouthDailyActivityGoalMinutes}분",
+                            if (minutes == null) {
+                                "0 또는 누락된 걸음 값은 목표 계산에 포함하지 않았습니다."
+                            } else {
+                                "추정 활동 ${minutes}분 / 목표 ${YouthDailyActivityGoalMinutes}분"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
-                HealthDetailRow("걸음 수", "%,d".format(day.steps))
-                HealthDetailRow("총 소모 칼로리", "%,.1f kcal".format(day.caloriesKcal))
-                HealthDetailRow("활동 칼로리", "%,.1f kcal".format(day.activeCaloriesKcal))
-                HealthDetailRow("이동 거리", "%,.2f km".format(day.distanceKm))
-                HealthDetailRow("평균 심박수", day.heartRateBpm?.let { "%d bpm".format(it) } ?: "데이터 없음")
-                HealthDetailRow("수면 시간", "%,.1f 시간".format(day.sleepHours))
+                HealthDetailRow("걸음 수", day.formattedMetric(HealthMetricKind.Steps))
+                HealthDetailRow("총 소모 칼로리", day.formattedMetric(HealthMetricKind.Calories))
+                HealthDetailRow("활동 칼로리", day.formattedMetric(HealthMetricKind.ActiveCalories))
+                HealthDetailRow("이동 거리", day.formattedMetric(HealthMetricKind.Distance))
+                HealthDetailRow("평균 심박수", day.formattedMetric(HealthMetricKind.HeartRate))
+                HealthDetailRow("수면 시간", day.formattedMetric(HealthMetricKind.Sleep))
+                if (day.exclusions.isNotEmpty()) {
+                    Text(
+                        "계산 제외: " + day.exclusions.joinToString { "${it.metric.label}(${it.reason})" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -420,8 +524,33 @@ fun HealthDetailRow(label: String, value: String) {
     }
 }
 
-private fun HealthDaySummary.estimatedActivityMinutes(): Int {
+private fun HealthDaySummary.estimatedActivityMinutes(): Int? {
+    if (!hasValidMetric(HealthMetricKind.Steps)) return null
     return (steps / ModerateWalkingStepsPerMinute).toInt().coerceAtLeast(0)
+}
+
+private fun HealthSummary.formattedMetric(metric: HealthMetricKind): String {
+    if (!hasValidMetric(metric)) return "기록 없음"
+    return when (metric) {
+        HealthMetricKind.Steps -> "%,d".format(steps)
+        HealthMetricKind.Calories -> "%,.1f kcal".format(caloriesKcal)
+        HealthMetricKind.ActiveCalories -> "%,.0f kcal".format(activeCaloriesKcal)
+        HealthMetricKind.Distance -> "%,.1f km".format(distanceKm)
+        HealthMetricKind.HeartRate -> heartRateBpm?.let { "%d bpm".format(it) } ?: "기록 없음"
+        HealthMetricKind.Sleep -> "%,.1f 시간".format(sleepHours)
+    }
+}
+
+private fun HealthDaySummary.formattedMetric(metric: HealthMetricKind): String {
+    if (!hasValidMetric(metric)) return "기록 없음"
+    return when (metric) {
+        HealthMetricKind.Steps -> "%,d".format(steps)
+        HealthMetricKind.Calories -> "%,.1f kcal".format(caloriesKcal)
+        HealthMetricKind.ActiveCalories -> "%,.1f kcal".format(activeCaloriesKcal)
+        HealthMetricKind.Distance -> "%,.2f km".format(distanceKm)
+        HealthMetricKind.HeartRate -> heartRateBpm?.let { "%d bpm".format(it) } ?: "기록 없음"
+        HealthMetricKind.Sleep -> "%,.1f 시간".format(sleepHours)
+    }
 }
 
 private fun calendarDaysFor(summary: HealthSummary): List<LocalDate> {

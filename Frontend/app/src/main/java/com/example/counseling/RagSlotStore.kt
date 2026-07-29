@@ -63,6 +63,11 @@ suspend fun readRagSlot(context: Context, slot: RagSlot): RagSlotDocument? = wit
     }.getOrNull()?.takeIf { it.contextText.isNotBlank() }
 }
 
+suspend fun clearRagSlot(context: Context, slot: RagSlot): Boolean = withContext(Dispatchers.IO) {
+    val file = ragSlotFile(context, slot)
+    !file.exists() || file.delete()
+}
+
 private fun ragSlotFile(context: Context, slot: RagSlot): File {
     val dir = File(context.filesDir, "rag_slots").apply { mkdirs() }
     return File(dir, slot.fileName)

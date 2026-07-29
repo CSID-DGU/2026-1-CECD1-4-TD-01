@@ -4,11 +4,36 @@ import android.media.AudioRecord
 import android.net.Uri
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
+import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyTemperatureRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
+import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ElevationGainedRecord
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.HydrationRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.PowerRecord
+import androidx.health.connect.client.records.RespiratoryRateRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.SkinTemperatureRecord
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.SpeedRecord
+import androidx.health.connect.client.records.StepsCadenceRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
+import androidx.health.connect.client.records.WeightRecord
 import com.example.counseling.llm.ChatMessage
 import kotlinx.coroutines.Job
 import java.io.File
@@ -54,6 +79,8 @@ data class HealthSummary(
     val heartRateBpm: Long? = null,
     val sleepHours: Double = 0.0,
     val daily: List<HealthDaySummary> = emptyList(),
+    val validMetrics: Set<HealthMetricKind> = emptySet(),
+    val excludedMetricCount: Int = 0,
     val message: String = "준비됨",
 )
 
@@ -70,6 +97,8 @@ data class HealthDaySummary(
     val distanceKm: Double = 0.0,
     val heartRateBpm: Long? = null,
     val sleepHours: Double = 0.0,
+    val validMetrics: Set<HealthMetricKind> = emptySet(),
+    val exclusions: List<HealthDataExclusion> = emptyList(),
 )
 
 data class ImportedSession(
@@ -103,4 +132,34 @@ val healthPermissions = setOf(
     HealthPermission.getReadPermission(HeartRateRecord::class),
     HealthPermission.getReadPermission(SleepSessionRecord::class),
 )
+
+val extendedHealthPermissions = setOf(
+    HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+    HealthPermission.getReadPermission(OxygenSaturationRecord::class),
+    HealthPermission.getReadPermission(BloodPressureRecord::class),
+    HealthPermission.getReadPermission(BloodGlucoseRecord::class),
+    HealthPermission.getReadPermission(Vo2MaxRecord::class),
+    HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+    HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
+    HealthPermission.getReadPermission(RespiratoryRateRecord::class),
+    HealthPermission.getReadPermission(BodyTemperatureRecord::class),
+    HealthPermission.getReadPermission(SkinTemperatureRecord::class),
+    HealthPermission.getReadPermission(SpeedRecord::class),
+    HealthPermission.getReadPermission(PowerRecord::class),
+    HealthPermission.getReadPermission(StepsCadenceRecord::class),
+    HealthPermission.getReadPermission(CyclingPedalingCadenceRecord::class),
+    HealthPermission.getReadPermission(ElevationGainedRecord::class),
+    HealthPermission.getReadPermission(FloorsClimbedRecord::class),
+    HealthPermission.getReadPermission(WeightRecord::class),
+    HealthPermission.getReadPermission(BodyFatRecord::class),
+    HealthPermission.getReadPermission(BasalMetabolicRateRecord::class),
+    HealthPermission.getReadPermission(HeightRecord::class),
+    HealthPermission.getReadPermission(BodyWaterMassRecord::class),
+    HealthPermission.getReadPermission(BoneMassRecord::class),
+    HealthPermission.getReadPermission(LeanBodyMassRecord::class),
+    HealthPermission.getReadPermission(NutritionRecord::class),
+    HealthPermission.getReadPermission(HydrationRecord::class),
+)
+
+val allHealthPermissions = healthPermissions + extendedHealthPermissions
 

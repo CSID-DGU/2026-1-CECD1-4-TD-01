@@ -2,6 +2,7 @@ package com.example.counseling
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -69,6 +70,8 @@ import com.example.counseling.llm.ChatRole
 import com.example.counseling.llm.EngineStatus
 import com.example.counseling.llm.LiteRtLmCounselingEngine
 import com.example.counseling.voiceemotion.LiteRtVoiceEmotionAnalyzer
+import com.example.counseling.voiceemotion.VoiceEmotionResult
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
@@ -88,6 +91,11 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val liteRtEngine = remember { LiteRtLmCounselingEngine(context.applicationContext) }
     val voiceEmotionAnalyzer = remember { LiteRtVoiceEmotionAnalyzer(context.applicationContext) }
+    val jetsonAdaptiveClient = remember { JetsonAdaptiveContextClient() }
+    val jetsonDerivedClient = remember { JetsonDerivedInsightClient() }
+    val pendingJetsonOutcomeStore = remember {
+        PendingJetsonOutcomeStore(context.applicationContext)
+    }
     val sessionStore = remember { ChatSessionStore(context.applicationContext) }
     val memoryStore = remember { ChatMemoryStore(context.applicationContext) }
     val imeBottomPadding = 0.dp
@@ -109,6 +117,7 @@ fun ChatScreen(
     var promptPreview by remember { mutableStateOf<PromptPreviewState?>(null) }
     var showMemories by remember { mutableStateOf(false) }
     var showChatSettings by remember { mutableStateOf(false) }
+    var showJetsonSync by remember { mutableStateOf(false) }
     var attachedAudioPath by remember { mutableStateOf<String?>(null) }
     var attachmentLabel by remember { mutableStateOf<String?>(null) }
     var thinkingMode by remember { mutableStateOf(ThinkingMode.Auto) }
@@ -119,6 +128,9 @@ fun ChatScreen(
     var directAttachmentMode by remember { mutableStateOf(true) }
     var chatFontSize by remember { mutableStateOf(ChatFontSize.Normal) }
     var currentSessionId by remember { mutableStateOf(ChatMemoryStore.DEFAULT_SESSION_ID) }
+    var pendingJetsonOutcome by remember {
+        mutableStateOf(pendingJetsonOutcomeStore.load())
+    }
     var showSessionList by remember { mutableStateOf(false) }
     var sessionSummaries by remember { mutableStateOf<List<ChatSessionSummary>>(emptyList()) }
     var isThinking by remember { mutableStateOf(false) }
@@ -467,8 +479,15 @@ fun ChatScreen(
             },
             onExportSession = { exportSession.launch("counseling_session.json") },
             onImportSession = { importSession.launch(arrayOf("application/json", "text/*", "*/*")) },
+            onShowJetsonSync = {
+                showChatSettings = false
+                showJetsonSync = true
+            },
             onDismiss = { showChatSettings = false },
         )
+    }
+    if (showJetsonSync) {
+        JetsonSyncDialog(onDismiss = { showJetsonSync = false })
     }
     if (showSessionList) {
         SessionListDialog(
@@ -682,8 +701,13 @@ fun ChatScreen(
                 val usePresentationMode = presentationMode
 
                 scope.launch {
+                    var currentVoiceEmotionState: JetsonEmotionState? = null
                     val analyzedUserMessage = rawUserMessage.withVoiceEmotionContext(
+                        context = context,
                         voiceEmotionAnalyzer = voiceEmotionAnalyzer,
+                        onAnalyzed = { result ->
+                            currentVoiceEmotionState = result.toJetsonEmotionState()
+                        },
                     ) { message ->
                         status = EngineStatus(status.isModelLoaded, message)
                     }
@@ -742,6 +766,90 @@ fun ChatScreen(
                     } else {
                         null
                     }
+                    val jetsonSettings = JetsonSyncSettingsStore(context)
+                    val jetsonEndpoint = jetsonSettings.loadEndpoint()
+                    val jetsonToken = jetsonSettings.loadToken()
+                    val jetsonConfigured = jetsonToken.isNotBlank()
+                    if (
+                        pendingJetsonOutcome?.conversationSessionId != currentSessionId ||
+                        pendingJetsonOutcome?.isWithinOutcomeWindow(System.currentTimeMillis()) == false
+                    ) {
+                        pendingJetsonOutcome = null
+                        pendingJetsonOutcomeStore.save(null)
+                    }
+                    val usableVoiceEmotion =
+                        currentVoiceEmotionState?.takeIf {
+                            it.confidence >=
+                                JetsonAdaptiveClientPolicy.MIN_USABLE_EMOTION_CONFIDENCE
+                        }
+                    val observedEmotion = usableVoiceEmotion
+                        ?: inferJetsonTextEmotionState(
+                            text = rawUserMessage.content,
+                        )?.takeIf {
+                            it.confidence >=
+                                JetsonAdaptiveClientPolicy.MIN_USABLE_EMOTION_CONFIDENCE
+                        }
+                    val observedEmotionModality = when {
+                        usableVoiceEmotion != null -> "VOICE"
+                        observedEmotion != null -> "TEXT"
+                        else -> null
+                    }
+                    val previousPending = pendingJetsonOutcome
+                    val outcomeDeferred = if (
+                        jetsonConfigured &&
+                        observedEmotion != null &&
+                        previousPending != null
+                    ) {
+                        async {
+                            runCatching {
+                                jetsonAdaptiveClient.sendOutcome(
+                                    context = context,
+                                    rawEndpoint = jetsonEndpoint,
+                                    token = jetsonToken,
+                                    pending = previousPending,
+                                    after = observedEmotion,
+                                )
+                            }.getOrDefault(false)
+                        }
+                    } else {
+                        null
+                    }
+                    val adaptiveContextDeferred = if (jetsonConfigured) {
+                        async {
+                            runCatching {
+                                jetsonAdaptiveClient.fetch(
+                                    context = context,
+                                    rawEndpoint = jetsonEndpoint,
+                                    token = jetsonToken,
+                                    topicDomains = inferJetsonTopicDomains(rawUserMessage.content),
+                                    currentEmotion = observedEmotion,
+                                )
+                            }.getOrNull()
+                        }
+                    } else {
+                        null
+                    }
+                    if (jetsonConfigured) {
+                        launch {
+                            runCatching {
+                                jetsonDerivedClient.sendLatest(
+                                    context = context,
+                                    rawEndpoint = jetsonEndpoint,
+                                    token = jetsonToken,
+                                    refreshLocalSummaries = true,
+                                    connectTimeoutMillis = 1_500,
+                                    readTimeoutMillis = 2_500,
+                                )
+                            }
+                        }
+                    }
+                    val adaptiveContextResult = adaptiveContextDeferred?.await()
+                    if (outcomeDeferred?.await() == true &&
+                        pendingJetsonOutcome?.outcomeId == previousPending?.outcomeId
+                    ) {
+                        pendingJetsonOutcome = null
+                        pendingJetsonOutcomeStore.save(null)
+                    }
                     val relevantMemories = memoryStore
                         .searchRelevant(text, sessionId = currentSessionId)
                         .filterNot { it.role == ChatRole.User && it.content == visibleUserMessage.content }
@@ -753,16 +861,67 @@ fun ChatScreen(
                         .withHealthContext(healthContext)
                         .withPhenotypeContext(phenotypeContext)
                         .withGalleryAnalysisContext(galleryAnalysisContext)
+                        .withJetsonAdaptiveContext(adaptiveContextResult?.promptContext)
                         .withThinkingInstruction(useThinking)
                         .toList()
                     liteRtEngine.setDirectAttachmentMode(directAttachmentMode || usePresentationMode)
+                    val responseStrategies = adaptiveContextResult
+                        ?.recommendedStrategies
+                        .orEmpty()
                     val reply = liteRtEngine.generateStreaming(promptMessages) { partial ->
                         messages[assistantIndex] = ChatMessage(ChatRole.Assistant, stripInternalThinking(partial))
                     }
-                    messages[assistantIndex] = ChatMessage(
+                    val finalAssistantMessage = ChatMessage(
                         ChatRole.Assistant,
                         stripInternalThinking(reply).ifBlank { "응답이 비어 있습니다." },
                     )
+                    messages[assistantIndex] = finalAssistantMessage
+                    if (
+                        jetsonConfigured &&
+                        pendingJetsonOutcome == null
+                    ) {
+                        observedEmotion?.let { emotion ->
+                            val fallbackStrategies = when {
+                                emotion.valence >=
+                                    JetsonAdaptiveClientPolicy.POSITIVE_FALLBACK_VALENCE -> {
+                                    listOf("POSITIVE_REINFORCEMENT", "OPEN_QUESTION")
+                                }
+                                emotion.arousal >=
+                                    JetsonAdaptiveClientPolicy.HIGH_AROUSAL_FALLBACK -> {
+                                    listOf("EMPATHIC_REFLECTION", "GROUNDING")
+                                }
+                                else -> {
+                                    listOf("EMPATHIC_REFLECTION", "OPEN_QUESTION")
+                                }
+                            }
+                            pendingJetsonOutcome = PendingJetsonOutcome(
+                                conversationSessionId = currentSessionId,
+                                startedAt = emotion.observedAt,
+                                before = emotion,
+                                strategies = responseStrategies.ifEmpty { fallbackStrategies },
+                                responseStyle = adaptiveContextResult?.responseStyle,
+                            )
+                            pendingJetsonOutcomeStore.save(pendingJetsonOutcome)
+                        }
+                    }
+                    if (jetsonConfigured) {
+                        launch {
+                            runCatching {
+                                jetsonAdaptiveClient.sendConversationTurn(
+                                    context = context,
+                                    rawEndpoint = jetsonEndpoint,
+                                    token = jetsonToken,
+                                    topicDomains = inferJetsonTopicDomains(rawUserMessage.content),
+                                    currentEmotion = observedEmotion,
+                                    emotionModality = observedEmotionModality,
+                                    strategies = responseStrategies,
+                                    hasAudio = rawUserMessage.audioPath != null,
+                                    userMessageLength = rawUserMessage.content.length,
+                                    assistantMessageLength = finalAssistantMessage.content.length,
+                                )
+                            }
+                        }
+                    }
                     sessionStore.saveLastSession(messages.toList(), systemPrompt, importantMemories.toList(), currentSessionId)
                     memoryStore.reindexSession(messages.toList(), currentSessionId)
                     sessionSummaries = sessionStore.listSessions()
@@ -946,7 +1105,9 @@ private fun DemoContextChip(text: String) {
 }
 
 private suspend fun ChatMessage.withVoiceEmotionContext(
+    context: Context,
     voiceEmotionAnalyzer: LiteRtVoiceEmotionAnalyzer,
+    onAnalyzed: (VoiceEmotionResult) -> Unit = {},
     updateStatus: (String) -> Unit,
 ): ChatMessage {
     val audio = audioPath?.let { File(it) }?.takeIf { it.exists() && it.length() > 44L }
@@ -959,7 +1120,9 @@ private suspend fun ChatMessage.withVoiceEmotionContext(
         updateStatus("음성 감정 모델을 찾지 못했거나 분석에 실패했습니다. 음성 첨부만 전달합니다.")
         return this
     }
+    onAnalyzed(result)
     val contextText = voiceEmotionAnalyzer.buildPromptContext(result)
+    runCatching { storeLatestVoiceEmotionInsight(context, contextText) }
     updateStatus("음성 감정 분석 완료: ${result.displaySummary()} · ${result.probabilitySummary()}")
     val visibleLabel = listOfNotNull(
         attachmentLabel,

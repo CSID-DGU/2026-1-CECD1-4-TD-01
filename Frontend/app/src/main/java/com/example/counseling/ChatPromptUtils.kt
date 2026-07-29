@@ -201,17 +201,48 @@ fun stripInternalThinking(text: String): String {
 }
 
 fun HealthSummary.toPromptContext(): String? {
-    if (daily.isEmpty()) return null
-    val recentDays = daily.take(7).joinToString(separator = "\n") { day ->
-        val heartRate = day.heartRateBpm?.let { "$it bpm" } ?: "데이터 없음"
-        "- ${day.date.format(healthPromptDateFormatter)}: 걸음 ${"%,d".format(day.steps)}, 수면 ${"%.1f".format(day.sleepHours)}시간, 평균 심박 $heartRate, 활동 칼로리 ${"%.1f".format(day.activeCaloriesKcal)}kcal, 거리 ${"%.2f".format(day.distanceKm)}km"
+    val availableDays = daily.filter { it.hasAnyValidMetric() }.take(7)
+    if (availableDays.isEmpty()) return null
+    val recentDays = availableDays.joinToString(separator = "\n") { day ->
+        val metrics = buildList {
+            if (day.hasValidMetric(HealthMetricKind.Steps)) add("걸음 ${"%,d".format(day.steps)}")
+            if (day.hasValidMetric(HealthMetricKind.Sleep)) add("수면 ${"%.1f".format(day.sleepHours)}시간")
+            if (day.hasValidMetric(HealthMetricKind.HeartRate)) {
+                day.heartRateBpm?.let { add("평균 심박 $it bpm") }
+            }
+            if (day.hasValidMetric(HealthMetricKind.ActiveCalories)) {
+                add("활동 칼로리 ${"%.1f".format(day.activeCaloriesKcal)}kcal")
+            }
+            if (day.hasValidMetric(HealthMetricKind.Distance)) {
+                add("거리 ${"%.2f".format(day.distanceKm)}km")
+            }
+        }
+        "- ${day.date.format(healthPromptDateFormatter)}: ${metrics.joinToString()}"
     }
-    val heartRate = heartRateBpm?.let { "$it bpm" } ?: "데이터 없음"
+    val periodMetrics = buildList {
+        if (hasValidMetric(HealthMetricKind.Steps)) add("걸음 ${"%,d".format(steps)}")
+        if (hasValidMetric(HealthMetricKind.Calories)) add("총 소모 칼로리 ${"%.1f".format(caloriesKcal)}kcal")
+        if (hasValidMetric(HealthMetricKind.ActiveCalories)) {
+            add("활동 칼로리 ${"%.1f".format(activeCaloriesKcal)}kcal")
+        }
+        if (hasValidMetric(HealthMetricKind.Distance)) add("이동 거리 ${"%.2f".format(distanceKm)}km")
+        if (hasValidMetric(HealthMetricKind.Sleep)) add("수면 ${"%.1f".format(sleepHours)}시간")
+        if (hasValidMetric(HealthMetricKind.HeartRate)) {
+            heartRateBpm?.let { add("평균 심박 $it bpm") }
+        }
+    }
+    if (periodMetrics.isEmpty()) return null
+    val qualityLine = if (excludedMetricCount > 0) {
+        "데이터 품질: 0·누락·모순·극소값 ${excludedMetricCount}건은 모든 계산과 해석에서 제외함."
+    } else {
+        "데이터 품질: 제외된 값 없음."
+    }
     return """
         [Health Connect ${period.label} 요약]
         이 자료는 사용자가 상담에 참고하도록 허용한 생활 리듬 요약입니다. 진단이나 단정의 근거로 쓰지 말고, 수면/활동/긴장 패턴을 조심스럽게 확인하는 보조 맥락으로만 사용하세요.
-        기간 합계: 걸음 ${"%,d".format(steps)}, 총 소모 칼로리 ${"%.1f".format(caloriesKcal)}kcal, 활동 칼로리 ${"%.1f".format(activeCaloriesKcal)}kcal, 이동 거리 ${"%.2f".format(distanceKm)}km, 수면 ${"%.1f".format(sleepHours)}시간, 평균 심박 $heartRate
-        최근 날짜별 기록:
+        기간 유효값 합계/평균: ${periodMetrics.joinToString()}
+        $qualityLine
+        최근 유효한 날짜별 기록:
         $recentDays
     """.trimIndent()
 }

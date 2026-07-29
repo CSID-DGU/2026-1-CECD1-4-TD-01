@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.counseling"
         minSdk = 28
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.8"
+        versionCode = 15
+        versionName = "1.3.0"
 
     }
 
@@ -53,7 +53,7 @@ tasks.register("copyDatedDebugApk") {
         copy {
             from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
             into(layout.buildDirectory.dir("outputs/apk/debug"))
-            rename { "Counseling_06_19_v1.0.8_debug.apk" }
+            rename { "Counseling_07_29_v1.3.0_debug.apk" }
         }
     }
 }
@@ -84,6 +84,7 @@ dependencies {
     implementation(libs.mlkit.objects)
     implementation(libs.mlkit.face.detection)
 
+    testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

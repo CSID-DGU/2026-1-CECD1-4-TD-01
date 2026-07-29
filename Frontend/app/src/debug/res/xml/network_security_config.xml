@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds may connect to a changing RFC1918 address on a development
+  hotspot. JetsonDerivedInsightSync validates the URL and rejects non-private
+  cleartext hosts before a connection is opened. The main/release resource
+  remains restricted to iot.local.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true"/>
+</network-security-config>
