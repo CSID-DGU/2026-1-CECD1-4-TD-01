@@ -1,0 +1,208 @@
+# Copy this file to Home Assistant's packages directory and enable packages.
+# Add these secrets:
+#
+# onmom_jetson_event_url: "http://JETSON_IP:8765/v1/analysis-events"
+# onmom_jetson_authorization: "Bearer THE_TOKEN_FROM_JETSON_INSTALL"
+#
+# The existing RFID automation should call script.onmom_rfid_enter or
+# script.onmom_rfid_exit.  It must never pass the raw RFID UID.
+
+rest_command:
+  onmom_analysis_event:
+    url: !secret onmom_jetson_event_url
+    method: POST
+    content_type: "application/json"
+    headers:
+      Authorization: !secret onmom_jetson_authorization
+      X-OnMom-Schema: "analysis-event-v1"
+    payload: "{{ payload }}"
+    timeout: 10
+
+input_boolean:
+  onmom_user_sleeping:
+    name: "On-mom user sleeping"
+    icon: mdi:sleep
+
+script:
+  onmom_rfid_enter:
+    alias: "On-mom RFID enter"
+    mode: queued
+    sequence:
+      - event: onmom_rfid_access
+        event_data:
+          direction: "ENTER"
+          zone: "front_door"
+          authorized: true
+
+  onmom_rfid_exit:
+    alias: "On-mom RFID exit"
+    mode: queued
+    sequence:
+      - event: onmom_rfid_access
+        event_data:
+          direction: "EXIT"
+          zone: "front_door"
+          authorized: true
+
+  onmom_door_open:
+    alias: "On-mom door opened"
+    mode: queued
+    sequence:
+      - event: onmom_door_state
+        event_data:
+          state: "OPEN"
+          zone: "front_door"
+
+  onmom_door_closed:
+    alias: "On-mom door closed"
+    mode: queued
+    sequence:
+      - event: onmom_door_state
+        event_data:
+          state: "CLOSED"
+          zone: "front_door"
+
+automation:
+  - id: onmom_forward_rfid_access
+    alias: "On-mom - forward derived RFID transition"
+    mode: queued
+    triggers:
+      - trigger: event
+        event_type: onmom_rfid_access
+    actions:
+      - action: rest_command.onmom_analysis_event
+        data:
+          payload: >-
+            {{
+              {
+                "schema_version": 1,
+                "event_id": "ha-access-" ~ trigger.event.context.id,
+                "source": "home_assistant.rfid",
+                "source_family": "presence.access",
+                "domain": "DAILY_ROUTINE",
+                "event_type": "access_transition",
+                "occurred_at": (as_timestamp(trigger.event.time_fired) * 1000) | int,
+                "expires_at": none,
+                "contains_raw_data": false,
+                "metrics": {
+                  "direction": trigger.event.data.direction | upper,
+                  "zone": trigger.event.data.zone | default("front_door"),
+                  "authorized": trigger.event.data.authorized | default(true)
+                },
+                "quality": {
+                  "status": "VALID",
+                  "confidence": 1.0,
+                  "coverage": 1.0,
+                  "reasons": []
+                }
+              } | tojson
+            }}
+
+  - id: onmom_forward_door_state
+    alias: "On-mom - forward derived door state"
+    mode: queued
+    triggers:
+      - trigger: event
+        event_type: onmom_door_state
+    actions:
+      - action: rest_command.onmom_analysis_event
+        data:
+          payload: >-
+            {{
+              {
+                "schema_version": 1,
+                "event_id": "ha-door-" ~ trigger.event.context.id,
+                "source": "home_assistant.door",
+                "source_family": "home.door",
+                "domain": "HOME_ENVIRONMENT",
+                "event_type": "door_state",
+                "occurred_at": (as_timestamp(trigger.event.time_fired) * 1000) | int,
+                "expires_at": none,
+                "contains_raw_data": false,
+                "metrics": {
+                  "state": trigger.event.data.state | upper,
+                  "zone": trigger.event.data.zone | default("front_door")
+                },
+                "quality": {
+                  "status": "VALID",
+                  "confidence": 1.0,
+                  "coverage": 1.0,
+                  "reasons": []
+                }
+              } | tojson
+            }}
+
+  # Refreshes sleep evidence every 15 minutes.  The Jetson accepts it as a
+  # training gate only while it is recent and confidence*coverage >= 0.70.
+  - id: onmom_refresh_sleep_state
+    alias: "On-mom - refresh sleep-gated learning state"
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: state
+        entity_id: input_boolean.onmom_user_sleeping
+        to: "on"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.onmom_user_sleeping
+        state: "on"
+    actions:
+      - action: rest_command.onmom_analysis_event
+        data:
+          payload: >-
+            {% set now_ms = (as_timestamp(now()) * 1000) | int %}
+            {{
+              {
+                "schema_version": 1,
+                "event_id": "ha-sleep-" ~ now_ms,
+                "source": "home_assistant",
+                "source_family": "sleep.presence",
+                "domain": "SLEEP_AND_ROUTINE",
+                "event_type": "sleep_state",
+                "occurred_at": now_ms,
+                "expires_at": now_ms + 1800000,
+                "contains_raw_data": false,
+                "metrics": {"state": "ASLEEP"},
+                "quality": {
+                  "status": "VALID",
+                  "confidence": 0.90,
+                  "coverage": 1.0,
+                  "reasons": []
+                }
+              } | tojson
+            }}
+
+  - id: onmom_clear_sleep_state
+    alias: "On-mom - clear sleep-gated learning state"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.onmom_user_sleeping
+        to: "off"
+    actions:
+      - action: rest_command.onmom_analysis_event
+        data:
+          payload: >-
+            {% set now_ms = (as_timestamp(now()) * 1000) | int %}
+            {{
+              {
+                "schema_version": 1,
+                "event_id": "ha-awake-" ~ now_ms,
+                "source": "home_assistant",
+                "source_family": "sleep.presence",
+                "domain": "SLEEP_AND_ROUTINE",
+                "event_type": "sleep_state",
+                "occurred_at": now_ms,
+                "expires_at": now_ms + 1800000,
+                "contains_raw_data": false,
+                "metrics": {"state": "AWAKE"},
+                "quality": {
+                  "status": "VALID",
+                  "confidence": 1.0,
+                  "coverage": 1.0,
+                  "reasons": []
+                }
+              } | tojson
+            }}
+

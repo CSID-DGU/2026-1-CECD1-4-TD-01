@@ -2,6 +2,7 @@ package com.example.counseling
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.HeartRateRecord
@@ -28,7 +29,7 @@ suspend fun readHealthSummary(context: Context, period: HealthPeriod): HealthSum
 
     val client = HealthConnectClient.getOrCreate(context)
     val granted = client.permissionController.getGrantedPermissions()
-    if (!granted.containsAll(healthPermissions)) {
+    if (granted.intersect(healthPermissions).isEmpty()) {
         return@withContext HealthSummary(period = period, message = "권한 연결을 눌러 Health Connect 읽기 권한을 허용해 주세요.")
     }
 
@@ -42,21 +43,15 @@ suspend fun readHealthSummary(context: Context, period: HealthPeriod): HealthSum
         val daily = buildList {
             var date = today
             while (!date.isBefore(startDate)) {
-                add(readHealthDaySummary(client, date, zone))
+                add(readHealthDaySummary(client, date, zone, granted))
                 date = date.minusDays(1)
             }
         }.sortedByDescending { it.date }
-        val heartRates = daily.mapNotNull { it.heartRateBpm }
-        HealthSummary(
-            period = period,
-            steps = daily.sumOf { it.steps },
-            distanceKm = daily.sumOf { it.distanceKm },
-            caloriesKcal = daily.sumOf { it.caloriesKcal },
-            activeCaloriesKcal = daily.sumOf { it.activeCaloriesKcal },
-            heartRateBpm = heartRates.takeIf { it.isNotEmpty() }?.average()?.toLong(),
-            sleepHours = daily.sumOf { it.sleepHours },
-            daily = daily,
-            message = "이번 ${period.label} Health Connect 요약과 날짜별 기록을 표시하고 있습니다.",
+        val summary = summarizeHealthDays(period, daily)
+        val missingCount = healthPermissions.count { it !in granted }
+        if (missingCount == 0) summary else summary.copy(
+            message = summary.message +
+                " 기본 ${healthPermissions.size}개 항목 중 ${missingCount}개는 권한이 없어 나머지 기록만 계산했습니다.",
         )
     }.getOrElse {
         HealthSummary(period = period, message = "건강 데이터 읽기 실패: ${it.message ?: it.javaClass.simpleName}")
@@ -65,7 +60,10 @@ suspend fun readHealthSummary(context: Context, period: HealthPeriod): HealthSum
 
 suspend fun refreshHealthRagSlot(context: Context, period: HealthPeriod): String? {
     val summary = readHealthSummary(context, period)
-    val contextText = summary.toPromptContext()
+    val overview = readExtendedHealthOverview(context, period)
+    val contextText = listOfNotNull(summary.toPromptContext(), overview.toPromptContext())
+        .joinToString("\n\n")
+        .takeIf { it.isNotBlank() }
     if (contextText != null) {
         replaceRagSlot(
             context = context,
@@ -74,6 +72,7 @@ suspend fun refreshHealthRagSlot(context: Context, period: HealthPeriod): String
             source = "Health Connect ${period.label} 요약",
         )
     }
+    if (contextText == null) clearRagSlot(context, RagSlot.Health)
     return contextText
 }
 
@@ -81,30 +80,40 @@ suspend fun readHealthDaySummary(
     client: HealthConnectClient,
     date: LocalDate,
     zone: ZoneId,
+    grantedPermissions: Set<String>,
 ): HealthDaySummary {
     val start = date.atStartOfDay(zone).toInstant()
     val end = date.plusDays(1).atStartOfDay(zone).toInstant().coerceAtMost(Instant.now())
+    val metrics = buildSet {
+        if (HealthPermission.getReadPermission(StepsRecord::class) in grantedPermissions) add(StepsRecord.COUNT_TOTAL)
+        if (HealthPermission.getReadPermission(DistanceRecord::class) in grantedPermissions) add(DistanceRecord.DISTANCE_TOTAL)
+        if (HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class) in grantedPermissions) add(TotalCaloriesBurnedRecord.ENERGY_TOTAL)
+        if (HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class) in grantedPermissions) add(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)
+        if (HealthPermission.getReadPermission(HeartRateRecord::class) in grantedPermissions) add(HeartRateRecord.BPM_AVG)
+        if (HealthPermission.getReadPermission(SleepSessionRecord::class) in grantedPermissions) add(SleepSessionRecord.SLEEP_DURATION_TOTAL)
+    }
     val result = client.aggregate(
         AggregateRequest(
-            metrics = setOf(
-                StepsRecord.COUNT_TOTAL,
-                DistanceRecord.DISTANCE_TOTAL,
-                TotalCaloriesBurnedRecord.ENERGY_TOTAL,
-                ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
-                HeartRateRecord.BPM_AVG,
-                SleepSessionRecord.SLEEP_DURATION_TOTAL,
-            ),
+            metrics = metrics,
             timeRangeFilter = TimeRangeFilter.between(start, end),
         ),
     )
-    return HealthDaySummary(
+    fun permission(recordPermission: String): Boolean = recordPermission in grantedPermissions
+    return sanitizeHealthDay(
         date = date,
-        steps = result[StepsRecord.COUNT_TOTAL] ?: 0L,
-        distanceKm = result[DistanceRecord.DISTANCE_TOTAL]?.inKilometers ?: 0.0,
-        caloriesKcal = result[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories ?: 0.0,
-        activeCaloriesKcal = result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0,
-        heartRateBpm = result[HeartRateRecord.BPM_AVG]?.toLong(),
-        sleepHours = (result[SleepSessionRecord.SLEEP_DURATION_TOTAL]?.toMinutes() ?: 0L) / 60.0,
+        raw = RawHealthDayMetrics(
+            steps = result[StepsRecord.COUNT_TOTAL].takeIf { permission(HealthPermission.getReadPermission(StepsRecord::class)) },
+            distanceKm = result[DistanceRecord.DISTANCE_TOTAL]?.inKilometers
+                ?.takeIf { permission(HealthPermission.getReadPermission(DistanceRecord::class)) },
+            caloriesKcal = result[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories
+                ?.takeIf { permission(HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class)) },
+            activeCaloriesKcal = result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
+                ?.takeIf { permission(HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class)) },
+            heartRateBpm = result[HeartRateRecord.BPM_AVG]
+                ?.takeIf { permission(HealthPermission.getReadPermission(HeartRateRecord::class)) },
+            sleepMinutes = result[SleepSessionRecord.SLEEP_DURATION_TOTAL]?.toMinutes()
+                ?.takeIf { permission(HealthPermission.getReadPermission(SleepSessionRecord::class)) },
+        ),
     )
 }
 

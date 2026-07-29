@@ -187,6 +187,7 @@ fun ChatSettingsDialog(
     onShowSessions: () -> Unit,
     onExportSession: () -> Unit,
     onImportSession: () -> Unit,
+    onShowJetsonSync: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var conversationOpen by remember { mutableStateOf(false) }
@@ -221,6 +222,21 @@ fun ChatSettingsDialog(
                     Button(onClick = onLoadModel, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                         Text(if (presentationMode) "상담 준비 파일 선택" else "모델 파일 선택")
                     }
+                }
+                item {
+                    SettingsPlainSectionTitle("Jetson")
+                }
+                item {
+                    SettingsActionButton(onClick = onShowJetsonSync, modifier = Modifier.fillMaxWidth()) {
+                        Text("파생 정보 전송")
+                    }
+                }
+                item {
+                    Text(
+                        "원본 사진·음성·통화기록·앱 이벤트·대화 내용은 전송하지 않습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
 
                 if (!presentationMode) {
@@ -334,7 +350,7 @@ fun ChatSettingsDialog(
 
                 item {
                     Text(
-                        text = if (presentationMode) "v1.0.7 사용자 화면" else "v1.0.7 개발자 화면",
+                        text = if (presentationMode) "v1.1.3 사용자 화면" else "v1.1.3 개발자 화면",
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp)
