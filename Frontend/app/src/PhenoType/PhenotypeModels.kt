@@ -24,7 +24,8 @@ data class CallLogSummary(
     val zeroCommunicationStreak: Int,       // 연속 연락 없는 날 수
     val weeklyChangePct: Float,             // 주간 통화 변화율 (%)
     val isolationAlert: Boolean,            // 대인 교류 급감 경보
-    val namedContactsRate: Float            // 저장된 연락처로의 통화 비율
+    val namedContactsRate: Float,           // 저장된 연락처로의 통화 비율
+    val rawEntries: List<CallLogEntry> = emptyList() // 원본 통화 기록 전체
 )
 
 // ─────────────────────────────────────────────
@@ -48,6 +49,14 @@ data class AppUsageEntry(
     val category: AppCategory
 )
 
+// 앱별 일일 사용 시간
+// ─────────────────────────────────────────────
+data class DailyAppUsageEntry(
+    val dateMs: Long,
+    val packageName: String,
+    val totalTimeMin: Long
+)
+
 // ─────────────────────────────────────────────
 // 앱 사용 통계 분석 결과
 // ─────────────────────────────────────────────
@@ -57,7 +66,8 @@ data class AppUsageSummary(
     val dailyAvgLateNightMin: Long,         // 야간(00~06시) 7일 평균 사용 (분)
     val longestSingleSessionMin: Long,      // 최장 단일 연속 세션 (분)
     val weeklyChangePct: Float,             // 주간 스크린타임 변화율 (%)
-    val hasPermission: Boolean              // PACKAGE_USAGE_STATS 권한 여부
+    val hasPermission: Boolean,             // PACKAGE_USAGE_STATS 권한 여부
+    val rawDailyEntries: List<DailyAppUsageEntry> = emptyList() // 원본 일별 앱 사용 기록 전체
 )
 
 // ─────────────────────────────────────────────

@@ -1,0 +1,12 @@
+packages:
+  base: !include esp_speaker_final.yaml
+
+esphome:
+  on_boot:
+    - priority: -90
+      then:
+        - delay: 4s
+        - logger.log: "Local test: playing /mp3/0001.mp3"
+        - dfplayer.set_device: TF_CARD
+        - dfplayer.set_volume: 20
+        - dfplayer.play_mp3: 1

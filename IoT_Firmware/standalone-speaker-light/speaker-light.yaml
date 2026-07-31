@@ -1,0 +1,605 @@
+substitutions:
+  device_name: esp12n-speaker-light
+  friendly_name: "ESP12N Speaker Light"
+  led_pin: GPIO2
+  speaker_pin: GPIO5
+  exit_button_pin: GPIO16
+  led_inverted: "false"
+  speaker_inverted: "false"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: "Standalone ESP-12N light, PWM speaker and RC522 RFID reader"
+  project:
+    name: "baakjun.esp12n-speaker-light"
+    version: "1.6.0"
+  platformio_options:
+    platform_packages:
+      - toolchain-xtensa@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/toolchain-xtensa-windows_amd64/2ec08ad-toolchain-xtensa-windows_amd64-2.100300.220621.tar.gz
+      - framework-arduinoespressif8266@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/framework-arduinoespressif8266/9c6b19b-framework-arduinoespressif8266-3.30102.0.tar.gz
+      - tool-esptool@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/tool-esptool-windows/7ae381b-tool-esptool-windows-1.413.0.tar.gz
+      - tool-esptoolpy@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/tool-esptoolpy/538b0a8-tool-esptoolpy-1.30000.201119.tar.gz
+  on_boot:
+    priority: -100
+    then:
+      - output.turn_off: buzzer_output
+      - delay: 500ms
+      - text_sensor.template.publish:
+          id: authorized_rfid_uid_sensor
+          state: !lambda |-
+            if (id(authorized_rfid_uid).empty()) return std::string("None");
+            return id(authorized_rfid_uid);
+      - text_sensor.template.publish:
+          id: rfid_result
+          state: !lambda |-
+            if (id(authorized_rfid_uid).empty()) return std::string("Not Enrolled");
+            return std::string("Ready");
+      - text_sensor.template.publish:
+          id: last_access_direction_sensor
+          state: !lambda |-
+            if (id(last_access_direction).empty()) return std::string("None");
+            return id(last_access_direction);
+
+esp8266:
+  board: esp12e
+  restore_from_flash: true
+  early_pin_init: false
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+  actions:
+    - action: beep
+      variables:
+        duration_ms: int
+      then:
+        - script.stop: doorbell_beep
+        - script.stop: alert_beep
+        - script.stop: access_granted_beep
+        - script.stop: custom_beep
+        - switch.turn_off: continuous_tone
+        - script.execute:
+            id: custom_beep
+            duration_ms: !lambda "return duration_ms;"
+    - action: stop_audio
+      then:
+        - script.stop: doorbell_beep
+        - script.stop: alert_beep
+        - script.stop: access_granted_beep
+        - script.stop: custom_beep
+        - switch.turn_off: continuous_tone
+        - output.turn_off: buzzer_output
+    - action: enroll_last_rfid
+      then:
+        - if:
+            condition:
+              lambda: "return !id(last_rfid_uid).empty();"
+            then:
+              - lambda: "id(authorized_rfid_uid) = id(last_rfid_uid);"
+              - text_sensor.template.publish:
+                  id: authorized_rfid_uid_sensor
+                  state: !lambda "return id(authorized_rfid_uid);"
+              - text_sensor.template.publish:
+                  id: rfid_result
+                  state: "Enrolled"
+              - script.execute: access_granted_beep
+    - action: enroll_next_rfid
+      then:
+        - script.execute: rfid_enrollment_timeout
+    - action: clear_authorized_rfid
+      then:
+        - script.stop: rfid_enrollment_timeout
+        - lambda: |-
+            id(rfid_enrollment_active) = false;
+            id(authorized_rfid_uid).clear();
+        - text_sensor.template.publish:
+            id: authorized_rfid_uid_sensor
+            state: "None"
+        - text_sensor.template.publish:
+            id: rfid_result
+            state: "Not Enrolled"
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+  power_save_mode: none
+  ap:
+    ssid: "ESP12N Speaker Light Setup"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+spi:
+  id: rfid_spi
+  clk_pin: GPIO14
+  miso_pin: GPIO12
+  mosi_pin: GPIO13
+
+rc522_spi:
+  id: rfid_reader
+  spi_id: rfid_spi
+  cs_pin: GPIO4
+  update_interval: 500ms
+  on_tag:
+    then:
+      - lambda: "id(last_rfid_uid) = x;"
+      - logger.log:
+          format: "RFID tag: %s"
+          args: ['x.c_str()']
+      - text_sensor.template.publish:
+          id: last_rfid_uid_sensor
+          state: !lambda "return x;"
+      - script.stop: doorbell_beep
+      - script.stop: alert_beep
+      - script.stop: access_granted_beep
+      - script.stop: custom_beep
+      - switch.turn_off: continuous_tone
+      - if:
+          condition:
+            lambda: "return id(rfid_enrollment_active);"
+          then:
+            - script.stop: rfid_enrollment_timeout
+            - lambda: |-
+                id(rfid_enrollment_active) = false;
+                id(authorized_rfid_uid) = x;
+            - text_sensor.template.publish:
+                id: authorized_rfid_uid_sensor
+                state: !lambda "return x;"
+            - text_sensor.template.publish:
+                id: rfid_result
+                state: "Enrolled"
+            - script.execute: access_granted_beep
+          else:
+            - if:
+                condition:
+                  lambda: |-
+                    return !id(authorized_rfid_uid).empty() &&
+                           x == id(authorized_rfid_uid);
+                then:
+                  - lambda: 'id(last_access_direction) = "IN";'
+                  - text_sensor.template.publish:
+                      id: last_access_direction_sensor
+                      state: "IN"
+                  - text_sensor.template.publish:
+                      id: rfid_result
+                      state: "Entry (IN)"
+                  - script.execute: access_granted_beep
+                else:
+                  - text_sensor.template.publish:
+                      id: rfid_result
+                      state: "Denied"
+                  - script.execute: doorbell_beep
+
+web_server:
+  port: 80
+  version: 3
+
+output:
+  - platform: esp8266_pwm
+    id: led_pwm
+    pin:
+      number: ${led_pin}
+      inverted: ${led_inverted}
+    frequency: 1000 Hz
+    zero_means_zero: true
+
+  - platform: esp8266_pwm
+    id: buzzer_output
+    pin:
+      number: ${speaker_pin}
+      inverted: ${speaker_inverted}
+    frequency: 1000 Hz
+    zero_means_zero: true
+
+light:
+  - platform: monochromatic
+    id: room_light
+    name: "Light"
+    icon: mdi:lightbulb
+    output: led_pwm
+    default_transition_length: 250ms
+    restore_mode: RESTORE_DEFAULT_OFF
+    effects:
+      - pulse:
+          name: "Slow Pulse"
+          transition_length: 750ms
+          update_interval: 1500ms
+      - strobe:
+          name: "Fast Strobe"
+
+number:
+  - platform: template
+    id: beep_duration
+    name: "Beep Duration"
+    icon: mdi:timer-sound-outline
+    entity_category: config
+    unit_of_measurement: ms
+    min_value: 50
+    max_value: 2000
+    step: 50
+    initial_value: 250
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    id: tone_frequency
+    name: "Tone Frequency"
+    icon: mdi:sine-wave
+    entity_category: config
+    unit_of_measurement: Hz
+    min_value: 100
+    max_value: 5000
+    step: 50
+    initial_value: 1000
+    optimistic: true
+    restore_value: true
+    set_action:
+      - if:
+          condition:
+            switch.is_on: continuous_tone
+          then:
+            - output.esp8266_pwm.set_frequency:
+                id: buzzer_output
+                frequency: !lambda "return x;"
+
+script:
+  - id: check_emergency_press
+    then:
+      - delay: 3s
+      - if:
+          condition:
+            binary_sensor.is_on: physical_exit_button
+          then:
+            - homeassistant.service:
+                service: rest_command.send_onmom_alert
+                data:
+                  title: "비상상황발생"
+                  message: "현관 도어락 비상버튼이 3초간 눌렸습니다. 확인해보세요."
+                  severity: "CRITICAL"
+
+  - id: rfid_enrollment_timeout
+    mode: restart
+    then:
+      - lambda: "id(rfid_enrollment_active) = true;"
+      - text_sensor.template.publish:
+          id: rfid_result
+          state: "Waiting for Next Card"
+      - delay: 30s
+      - lambda: "id(rfid_enrollment_active) = false;"
+      - text_sensor.template.publish:
+          id: rfid_result
+          state: "Enrollment Timed Out"
+
+  - id: custom_beep
+    mode: restart
+    parameters:
+      duration_ms: int
+    then:
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: !lambda "return id(tone_frequency).state;"
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+      - delay: !lambda |-
+          if (duration_ms < 20) return (uint32_t) 20;
+          if (duration_ms > 5000) return (uint32_t) 5000;
+          return (uint32_t) duration_ms;
+      - output.turn_off: buzzer_output
+
+  - id: doorbell_beep
+    mode: restart
+    then:
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: 1200 Hz
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+      - delay: 160ms
+      - output.turn_off: buzzer_output
+      - delay: 120ms
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: 800 Hz
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+      - delay: 360ms
+      - output.turn_off: buzzer_output
+
+  - id: alert_beep
+    mode: restart
+    then:
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: 1500 Hz
+      - repeat:
+          count: 3
+          then:
+            - output.set_level:
+                id: buzzer_output
+                level: 50%
+            - delay: 180ms
+            - output.turn_off: buzzer_output
+            - delay: 140ms
+
+  - id: access_granted_beep
+    mode: restart
+    then:
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: 700 Hz
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+      - delay: 100ms
+      - output.turn_off: buzzer_output
+      - delay: 60ms
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: 1100 Hz
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+      - delay: 100ms
+      - output.turn_off: buzzer_output
+      - delay: 60ms
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: 1600 Hz
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+      - delay: 180ms
+      - output.turn_off: buzzer_output
+
+switch:
+  - platform: template
+    id: continuous_tone
+    name: "Continuous Tone"
+    icon: mdi:volume-high
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - script.stop: doorbell_beep
+      - script.stop: alert_beep
+      - script.stop: access_granted_beep
+      - script.stop: custom_beep
+      - output.esp8266_pwm.set_frequency:
+          id: buzzer_output
+          frequency: !lambda "return id(tone_frequency).state;"
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+    turn_off_action:
+      - output.turn_off: buzzer_output
+
+button:
+  - platform: template
+    id: record_exit_button
+    name: "Record Exit"
+    icon: mdi:exit-run
+    on_press:
+      - script.stop: doorbell_beep
+      - script.stop: alert_beep
+      - script.stop: access_granted_beep
+      - script.stop: custom_beep
+      - switch.turn_off: continuous_tone
+      - lambda: 'id(last_access_direction) = "OUT";'
+      - text_sensor.template.publish:
+          id: last_access_direction_sensor
+          state: "OUT"
+      - text_sensor.template.publish:
+          id: rfid_result
+          state: "Exit (OUT)"
+      - script.execute:
+          id: custom_beep
+          duration_ms: 220
+
+  - platform: template
+    name: "Register Next RFID Card"
+    icon: mdi:card-plus
+    on_press:
+      - script.execute: rfid_enrollment_timeout
+
+  - platform: template
+    name: "Register Last RFID Card"
+    icon: mdi:card-account-details-star
+    on_press:
+      - if:
+          condition:
+            lambda: "return !id(last_rfid_uid).empty();"
+          then:
+            - lambda: "id(authorized_rfid_uid) = id(last_rfid_uid);"
+            - text_sensor.template.publish:
+                id: authorized_rfid_uid_sensor
+                state: !lambda "return id(authorized_rfid_uid);"
+            - text_sensor.template.publish:
+                id: rfid_result
+                state: "Enrolled"
+            - script.execute: access_granted_beep
+          else:
+            - text_sensor.template.publish:
+                id: rfid_result
+                state: "No Card Scanned"
+
+  - platform: template
+    name: "Cancel RFID Enrollment"
+    icon: mdi:card-remove-outline
+    on_press:
+      - script.stop: rfid_enrollment_timeout
+      - lambda: "id(rfid_enrollment_active) = false;"
+      - text_sensor.template.publish:
+          id: rfid_result
+          state: "Enrollment Cancelled"
+
+  - platform: template
+    name: "Clear Authorized RFID Card"
+    icon: mdi:delete-alert-outline
+    on_press:
+      - script.stop: rfid_enrollment_timeout
+      - lambda: |-
+          id(rfid_enrollment_active) = false;
+          id(authorized_rfid_uid).clear();
+      - text_sensor.template.publish:
+          id: authorized_rfid_uid_sensor
+          state: "None"
+      - text_sensor.template.publish:
+          id: rfid_result
+          state: "Not Enrolled"
+
+  - platform: template
+    name: "Doorbell"
+    icon: mdi:doorbell
+    on_press:
+      - script.stop: alert_beep
+      - script.stop: access_granted_beep
+      - script.stop: custom_beep
+      - switch.turn_off: continuous_tone
+      - script.execute: doorbell_beep
+
+  - platform: template
+    name: "Alert"
+    icon: mdi:bell-ring
+    on_press:
+      - script.stop: doorbell_beep
+      - script.stop: access_granted_beep
+      - script.stop: custom_beep
+      - switch.turn_off: continuous_tone
+      - script.execute: alert_beep
+
+  - platform: template
+    name: "Test Buzzer"
+    icon: mdi:volume-high
+    on_press:
+      - script.stop: doorbell_beep
+      - script.stop: alert_beep
+      - script.stop: access_granted_beep
+      - switch.turn_off: continuous_tone
+      - script.execute:
+          id: custom_beep
+          duration_ms: !lambda "return (int) id(beep_duration).state;"
+
+  - platform: template
+    name: "Stop Speaker"
+    icon: mdi:volume-off
+    on_press:
+      - script.stop: doorbell_beep
+      - script.stop: alert_beep
+      - script.stop: access_granted_beep
+      - script.stop: custom_beep
+      - switch.turn_off: continuous_tone
+      - output.turn_off: buzzer_output
+
+  - platform: restart
+    name: "Restart Device"
+    entity_category: diagnostic
+
+  - platform: safe_mode
+    name: "Restart in Safe Mode"
+    entity_category: diagnostic
+
+binary_sensor:
+  - platform: gpio
+    id: physical_exit_button
+    name: "Physical Exit Button"
+    icon: mdi:button-pointer
+    pin:
+      number: ${exit_button_pin}
+      mode:
+        input: true
+        pulldown: true
+    filters:
+      - delayed_on: 40ms
+      - delayed_off: 40ms
+    on_press:
+      - button.press: record_exit_button
+      - script.execute: check_emergency_press
+
+  - platform: status
+    name: "Connection Status"
+    entity_category: diagnostic
+
+globals:
+  - id: authorized_rfid_uid
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 32
+    initial_value: '""'
+
+  - id: last_rfid_uid
+    type: std::string
+    restore_value: false
+    initial_value: '""'
+
+  - id: rfid_enrollment_active
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+  - id: last_access_direction
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 8
+    initial_value: '""'
+
+sensor:
+  - platform: wifi_signal
+    name: "Wi-Fi Signal"
+    entity_category: diagnostic
+    update_interval: 60s
+
+  - platform: uptime
+    name: "Uptime"
+    entity_category: diagnostic
+    update_interval: 60s
+
+text_sensor:
+  - platform: template
+    id: last_access_direction_sensor
+    name: "Last Access Direction"
+    icon: mdi:door-open
+    update_interval: never
+
+  - platform: template
+    id: authorized_rfid_uid_sensor
+    name: "Authorized RFID UID"
+    icon: mdi:card-account-details-star
+    update_interval: never
+
+  - platform: template
+    id: last_rfid_uid_sensor
+    name: "Last RFID UID"
+    icon: mdi:card-account-details-outline
+    update_interval: never
+
+  - platform: template
+    id: rfid_result
+    name: "RFID Result"
+    icon: mdi:shield-key-outline
+    update_interval: never
+
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      entity_category: diagnostic
+    ssid:
+      name: "Connected Wi-Fi"
+      entity_category: diagnostic
+    mac_address:
+      name: "MAC Address"
+      entity_category: diagnostic
+
+  - platform: version
+    name: "ESPHome Version"
+    entity_category: diagnostic

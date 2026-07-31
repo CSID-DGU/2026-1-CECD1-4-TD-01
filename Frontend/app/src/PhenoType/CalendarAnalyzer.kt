@@ -35,8 +35,8 @@ class CalendarAnalyzer(private val context: Context) {
 
         val now = System.currentTimeMillis()
         val fourteenDaysMs = 14L * 24 * 60 * 60 * 1000
-        val startTime = now - fourteenDaysMs
-        val endTime = now + fourteenDaysMs
+        val startTime = 0L // 과거 전체 일정 조회 (원본 전송용)
+        val endTime = now + fourteenDaysMs // 미래는 14일까지만 조회
 
         val projection = arrayOf(
             CalendarContract.Events.TITLE,

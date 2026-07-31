@@ -1,0 +1,38 @@
+type: entities
+title: ESP12N 스피커·조명·RFID
+show_header_toggle: false
+entities:
+  - entity: light.esp12n_speaker_light_light
+    name: 조명
+  - entity: text_sensor.esp12n_speaker_light_rfid_result
+    name: RFID 상태
+  - entity: text_sensor.esp12n_speaker_light_last_access_direction
+    name: 마지막 출입 방향
+  - entity: button.esp12n_speaker_light_record_exit
+    name: 외출 기록
+  - entity: text_sensor.esp12n_speaker_light_authorized_rfid_uid
+    name: 승인 카드 UID
+  - entity: text_sensor.esp12n_speaker_light_last_rfid_uid
+    name: 마지막 카드 UID
+  - entity: button.esp12n_speaker_light_register_next_rfid_card
+    name: 다음 RFID 카드 등록
+  - entity: button.esp12n_speaker_light_register_last_rfid_card
+    name: 마지막 RFID 카드 등록
+  - entity: button.esp12n_speaker_light_cancel_rfid_enrollment
+    name: RFID 등록 취소
+  - entity: button.esp12n_speaker_light_clear_authorized_rfid_card
+    name: 승인 카드 삭제
+  - entity: switch.esp12n_speaker_light_continuous_tone
+    name: 연속음
+  - entity: number.esp12n_speaker_light_beep_duration
+    name: 비프 길이
+  - entity: number.esp12n_speaker_light_tone_frequency
+    name: 음 높이
+  - entity: button.esp12n_speaker_light_test_buzzer
+    name: 부저 시험
+  - entity: button.esp12n_speaker_light_doorbell
+    name: 초인종
+  - entity: button.esp12n_speaker_light_alert
+    name: 경고음
+  - entity: button.esp12n_speaker_light_stop_speaker
+    name: 스피커 정지

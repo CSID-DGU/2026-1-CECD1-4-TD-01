@@ -82,6 +82,13 @@ data class DerivedHealthResult(
     val analysisValues: Map<String, Double> = emptyMap(),
 )
 
+data class RawExerciseEntry(
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val exerciseType: Int,
+    val exerciseTypeLabel: String
+)
+
 private val localDateTimeFormatter = DateTimeFormatter.ofPattern("MM.dd HH:mm")
 
 suspend fun readExtendedHealthOverview(
@@ -773,4 +780,29 @@ private fun exerciseTypeLabel(type: Int): String = when (type) {
     ExerciseSessionRecord.EXERCISE_TYPE_HIGH_INTENSITY_INTERVAL_TRAINING -> "고강도 인터벌"
     ExerciseSessionRecord.EXERCISE_TYPE_DANCING -> "댄스"
     else -> "기타 운동"
+}
+
+suspend fun readRawExerciseRecords(context: Context): List<RawExerciseEntry>? = withContext(Dispatchers.IO) {
+    if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_UNAVAILABLE) {
+        return@withContext null
+    }
+    
+    val client = HealthConnectClient.getOrCreate(context)
+    val granted = runCatching { client.permissionController.getGrantedPermissions() }.getOrNull() ?: return@withContext null
+    if (HealthPermission.getReadPermission(ExerciseSessionRecord::class) !in granted) {
+        return@withContext null
+    }
+
+    val filter = TimeRangeFilter.after(Instant.EPOCH)
+    val request = ReadRecordsRequest(recordType = ExerciseSessionRecord::class, timeRangeFilter = filter)
+    val response = runCatching { client.readRecords(request) }.getOrNull() ?: return@withContext null
+    
+    response.records.map { record ->
+        RawExerciseEntry(
+            startTimeMs = record.startTime.toEpochMilli(),
+            endTimeMs = record.endTime.toEpochMilli(),
+            exerciseType = record.exerciseType,
+            exerciseTypeLabel = exerciseTypeLabel(record.exerciseType)
+        )
+    }
 }

@@ -49,10 +49,10 @@ class CallLogAnalyzer(private val context: Context) {
         val thisWeekStart = now - oneWeekMs
         val prevWeekStart = now - 2 * oneWeekMs
 
-        // 최근 14일 전체 쿼리 후 주별 분리
-        val allEntries = queryCallLog(prevWeekStart, now)
+        // 수집 가능한 전체 과거 기록 조회 (원본 전송용)
+        val allEntries = queryCallLog(0L, now)
         val thisWeek = allEntries.filter { it.dateMs >= thisWeekStart }
-        val prevWeek = allEntries.filter { it.dateMs < thisWeekStart }
+        val prevWeek = allEntries.filter { it.dateMs in prevWeekStart until thisWeekStart }
 
         val thisCount = thisWeek.size
         val prevCount = prevWeek.size
@@ -90,17 +90,18 @@ class CallLogAnalyzer(private val context: Context) {
 
         Log.d(TAG, "통화 분석 완료 — 이번주:$thisCount 지난주:$prevCount 무연락:${zeroDayStreak}일")
 
-        CallLogSummary(
-            totalCallsThisWeek     = thisCount,
-            totalCallsPrevWeek     = prevCount,
-            uniqueContactsThisWeek = uniqueContacts,
-            avgDurationSec         = avgDuration,
-            missedCallCount        = missedCount,
-            missedCallRate         = missedRate,
+        return@withContext CallLogSummary(
+            totalCallsThisWeek      = thisCount,
+            totalCallsPrevWeek      = prevCount,
+            uniqueContactsThisWeek  = uniqueContacts,
+            avgDurationSec          = avgDuration,
+            missedCallCount         = missedCount,
+            missedCallRate          = missedRate,
             zeroCommunicationStreak = zeroDayStreak,
-            weeklyChangePct        = weeklyChangePct,
-            isolationAlert         = isolationAlert,
-            namedContactsRate      = namedRate
+            weeklyChangePct         = weeklyChangePct,
+            isolationAlert          = isolationAlert,
+            namedContactsRate       = namedRate,
+            rawEntries              = allEntries
         )
     }
 

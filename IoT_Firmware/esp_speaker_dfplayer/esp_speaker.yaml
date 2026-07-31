@@ -1,0 +1,51 @@
+substitutions:
+  name: "esp-speaker"
+  friendly_name: "ESP Speaker"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp8266:
+  board: esp12e # ESP-12N 보드와 핀맵 호환 (NodeMCU, Wemos D1 계열)
+
+# 로깅 활성화 (시리얼 및 네트워크 로그)
+logger:
+  # DFPlayer 하드웨어 시리얼 충돌을 피하기 위해 로거의 baud rate를 조절하거나 
+  # UART 핀을 D1/D2 등 다른 핀으로 우회하여 사용
+  baud_rate: 115200
+
+# 홈 어시스턴트 API 활성화
+api:
+
+# 무선 펌웨어 업데이트 (OTA) 활성화
+ota:
+  - platform: esphome
+
+wifi:
+  # 여기에 사용하는 Wi-Fi 정보를 입력하세요
+  ssid: "YOUR_WIFI_SSID"
+  password: "YOUR_WIFI_PASSWORD"
+
+  # Wi-Fi 접속 실패 시 임시로 열리는 핫스팟
+  ap:
+    ssid: "${name}-fallback"
+    password: "fallbackpassword"
+
+captive_portal:
+
+# DFPlayer Mini 통신을 위한 UART (Software Serial)
+uart:
+  tx_pin: GPIO4 # NodeMCU 기준 D2 핀 (DFPlayer의 RX에 연결)
+  rx_pin: GPIO5 # NodeMCU 기준 D1 핀 (DFPlayer의 TX에 연결)
+  baud_rate: 9600
+
+# DFPlayer 코어 모듈 설정
+dfplayer:
+  on_finished_playback:
+    - logger.log: "Playback finished!"
+
+# 홈 어시스턴트에 노출될 미디어 플레이어 기기 설정
+media_player:
+  - platform: dfplayer
+    name: "ESP Smart Speaker"

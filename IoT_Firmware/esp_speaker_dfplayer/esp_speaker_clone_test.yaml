@@ -1,0 +1,48 @@
+packages:
+  base: !include esp_speaker_final.yaml
+
+logger:
+  level: DEBUG
+
+uart:
+  id: dfplayer_uart
+  debug:
+    direction: BOTH
+    dummy_receiver: false
+    after:
+      timeout: 100ms
+    sequence:
+      - lambda: UARTDebug::log_hex(direction, bytes, ' ');
+
+esphome:
+  on_boot:
+    - priority: -90
+      then:
+        - delay: 4s
+
+        # Some JL-chip DFPlayer clones behave better with ACK disabled.
+        - logger.log: "Clone test: reset, ACK disabled"
+        - uart.write: [0x7E, 0xFF, 0x06, 0x0C, 0x00, 0x00, 0x00, 0xFE, 0xEF, 0xEF]
+        - delay: 2s
+
+        - logger.log: "Clone test: select TF card"
+        - uart.write: [0x7E, 0xFF, 0x06, 0x09, 0x00, 0x00, 0x02, 0xFE, 0xF0, 0xEF]
+        - delay: 1s
+
+        - logger.log: "Clone test: volume 25"
+        - uart.write: [0x7E, 0xFF, 0x06, 0x06, 0x00, 0x00, 0x19, 0xFE, 0xDC, 0xEF]
+        - delay: 1s
+
+        # Global track command: plays the first file known to the module.
+        - logger.log: "Clone test A: play global track 1 (command 0x03)"
+        - uart.write: [0x7E, 0xFF, 0x06, 0x03, 0x00, 0x00, 0x01, 0xFE, 0xF7, 0xEF]
+        - delay: 8s
+
+        # Next-track command can start playback on clones that ignore 0x12.
+        - logger.log: "Clone test B: play next track (command 0x01)"
+        - uart.write: [0x7E, 0xFF, 0x06, 0x01, 0x00, 0x00, 0x00, 0xFE, 0xFA, 0xEF]
+        - delay: 8s
+
+        # Standard /mp3/0001.mp3 command, also with ACK disabled.
+        - logger.log: "Clone test C: play /mp3/0001.mp3 (command 0x12)"
+        - uart.write: [0x7E, 0xFF, 0x06, 0x12, 0x00, 0x00, 0x01, 0xFE, 0xE8, 0xEF]

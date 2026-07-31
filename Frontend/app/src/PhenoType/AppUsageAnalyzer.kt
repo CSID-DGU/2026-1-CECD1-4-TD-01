@@ -11,6 +11,7 @@ import android.util.Log
 import com.psychocare.data.AppCategory
 import com.psychocare.data.AppUsageEntry
 import com.psychocare.data.AppUsageSummary
+import com.psychocare.data.DailyAppUsageEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -127,16 +128,32 @@ class AppUsageAnalyzer(private val context: Context) {
         // ── 최장 단일 세션 ────────────────────────────────────────────
         val longestMin = calcLongestSession(usm, thisWeekStart, now)
 
-        Log.d(TAG, "앱 사용 분석 완료 — 일평균:${thisWeekTotalMs / 7 / 60_000}분 " +
-                "야간:${lateNightTotalMin / 7}분/일 최장세션:${longestMin}분")
+        // ── 원본 데이터 (전체 기간 일별 통계) ────────────────────────
+        val allDailyStats = usm.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY, 0L, now
+        ) ?: emptyList()
+        
+        val rawDailyEntries = allDailyStats
+            .filter { it.totalTimeInForeground > 0 }
+            .map { stat ->
+                DailyAppUsageEntry(
+                    dateMs = stat.firstTimeStamp,
+                    packageName = stat.packageName,
+                    totalTimeMin = stat.totalTimeInForeground / 60_000
+                )
+            }
 
-        AppUsageSummary(
-            topApps                = topApps,
-            dailyAvgScreenTimeMin  = (thisWeekTotalMs / 7) / 60_000,
-            dailyAvgLateNightMin   = lateNightTotalMin / 7,
+        Log.d(TAG, "앱 사용 분석 완료 — 일평균:${thisWeekTotalMs / 7 / 60_000}분 " +
+                "야간:${lateNightTotalMin / 7}분/일 최장세션:${longestMin}분, 원본 일별데이터 ${rawDailyEntries.size}건 수집")
+
+        return@withContext AppUsageSummary(
+            topApps                 = topApps,
+            dailyAvgScreenTimeMin   = (thisWeekTotalMs / 7) / 60_000,
+            dailyAvgLateNightMin    = lateNightTotalMin / 7,
             longestSingleSessionMin = longestMin,
-            weeklyChangePct        = weeklyChangePct,
-            hasPermission          = true
+            weeklyChangePct         = weeklyChangePct,
+            hasPermission           = true,
+            rawDailyEntries         = rawDailyEntries
         )
     }
 

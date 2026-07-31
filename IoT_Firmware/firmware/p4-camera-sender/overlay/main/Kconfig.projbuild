@@ -1,0 +1,116 @@
+menu "P4 Camera Sender"
+
+    config EXAMPLE_M2M_MODE_ENCODE
+        bool
+        default y
+
+    config EXAMPLE_M2M_MODE_DECODE
+        bool
+        default n
+
+    config EXAMPLE_M2M_MODE_PIPELINE
+        bool
+        default n
+
+    config EXAMPLE_H264_I_PERIOD
+        int
+        default 15
+
+    config EXAMPLE_H264_BITRATE
+        int
+        default 1000000
+
+    config EXAMPLE_H264_MIN_QP
+        int
+        default 25
+
+    config EXAMPLE_H264_MAX_QP
+        int
+        default 35
+
+    config P4SENDER_WIDTH
+        int "Output width"
+        default 1280
+        range 160 1920
+
+    config P4SENDER_HEIGHT
+        int "Output height"
+        default 960
+        range 120 1080
+
+    config P4SENDER_FPS
+        int "Output frames per second"
+        default 15
+        range 1 30
+    config P4SENDER_JPEG_QUALITY
+        int "JPEG quality percent"
+        default 50
+        range 1 100
+
+    config P4SENDER_SNAPSHOT_INTERVAL_MS
+        int "Snapshot start interval in milliseconds"
+        default 1700
+        range 500 60000
+
+    config P4SENDER_H264_BITRATE
+        int "H.264 target bitrate (bps)"
+        default 240000
+        range 100000 1500000
+
+    config P4SENDER_H264_GOP
+        int "H.264 keyframe interval (frames)"
+        default 15
+        range 1 120
+
+    config P4SENDER_H264_MIN_QP
+        int "H.264 minimum QP"
+        default 25
+        range 1 51
+
+    config P4SENDER_H264_MAX_QP
+        int "H.264 maximum QP"
+        default 35
+        range 1 51
+
+    config P4SENDER_UART_PORT
+        int "UART port"
+        default 1
+        range 0 4
+
+    config P4SENDER_UART_TX_GPIO
+        int "UART TX GPIO connected to DT-06 RXD"
+        default 32
+        range 0 54
+
+    config P4SENDER_UART_RX_GPIO
+        int "UART RX GPIO (optional control channel)"
+        default 33
+        range -1 54
+
+    config P4SENDER_UART_BAUD
+        int "UART baud rate"
+        default 1000000
+        range 115200 4000000
+
+    config P4SENDER_OLED_SDA_GPIO
+        int "SSD1306 OLED SDA GPIO"
+        default 28
+        range 0 54
+
+    config P4SENDER_OLED_SCL_GPIO
+        int "SSD1306 OLED SCL GPIO"
+        default 29
+        range 0 54
+
+    config P4SENDER_SPEAKER_GPIO
+        int "Speaker PWM GPIO"
+        default 30
+        range 0 54
+
+    config P4SENDER_DT06_STATE_GPIO
+        int "DT-06 STATE GPIO"
+        default 31
+        range 0 54
+
+endmenu
+

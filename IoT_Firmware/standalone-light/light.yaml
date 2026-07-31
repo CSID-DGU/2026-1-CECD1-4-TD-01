@@ -1,0 +1,138 @@
+# ── 핀 매핑 참고 ──────────────────────────
+# D0 = GPIO16 | D1 = GPIO5  | D2 = GPIO4
+# D3 = GPIO0  | D4 = GPIO2  | D5 = GPIO14
+# ─────────────────────────────────────────
+#
+# [기본] 버튼을 D0 ↔ D3 사이에 연결
+#   → D0(GPIO16)=가상GND(output LOW), D3(GPIO0)=버튼입력
+#
+# [대안] 버튼을 D2 ↔ GND 사이에 연결
+#   → button_pin을 GPIO4로 변경, button_gnd_pin 줄을 주석처리
+#
+substitutions:
+  device_name: esp12n-light
+  friendly_name: "ESP12N Light"
+  light_pin: GPIO2       # D4
+  light_inverted: "false"
+  button_pin: GPIO4      # D2 (버튼 입력)
+  button_gnd_pin: GPIO16 # D0 (가상 GND)  ← D2+GND 사용 시 이 줄 삭제
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: "Standalone ESP-12N dimmable light"
+  project:
+    name: "baakjun.esp12n-light"
+    version: "1.0.0"
+  platformio_options:
+    platform_packages:
+      - toolchain-xtensa@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/toolchain-xtensa-windows_amd64/2ec08ad-toolchain-xtensa-windows_amd64-2.100300.220621.tar.gz
+      - framework-arduinoespressif8266@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/framework-arduinoespressif8266/9c6b19b-framework-arduinoespressif8266-3.30102.0.tar.gz
+      - tool-esptool@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/tool-esptool-windows/7ae381b-tool-esptool-windows-1.413.0.tar.gz
+      - tool-esptoolpy@https://github.com/ivankravets/pioreg-ci-mirror/releases/download/tool-esptoolpy/538b0a8-tool-esptoolpy-1.30000.201119.tar.gz
+  on_boot:
+    priority: -100
+    then:
+      - light.turn_off: room_light
+      # D0(GPIO16)을 LOW로 설정 → 가상 GND 역할
+      - output.turn_off: button_virtual_gnd
+
+esp8266:
+  board: esp12e
+  restore_from_flash: true
+  early_pin_init: false
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+  power_save_mode: none
+  ap:
+    ssid: "ESP12N Light Setup"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+web_server:
+  port: 80
+  version: 3
+
+output:
+  # D0(GPIO16) → 가상 GND (항상 LOW 유지)
+  # D2+GND 방식 사용 시 이 블록 삭제
+  - platform: gpio
+    id: button_virtual_gnd
+    pin:
+      number: ${button_gnd_pin}
+      mode: output
+
+  - platform: esp8266_pwm
+    id: light_pwm
+    pin:
+      number: ${light_pin}
+      inverted: ${light_inverted}
+    frequency: 1000 Hz
+    zero_means_zero: true
+
+light:
+  - platform: monochromatic
+    id: room_light
+    name: "Light"
+    icon: mdi:lightbulb
+    output: light_pwm
+    default_transition_length: 250ms
+    restore_mode: RESTORE_DEFAULT_OFF
+
+binary_sensor:
+  - platform: gpio
+    id: physical_button
+    name: "Button"
+    pin:
+      number: ${button_pin}
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    on_press:
+      then:
+        - light.toggle: room_light
+    on_click:
+      min_length: 1000ms
+      max_length: 5000ms
+      then:
+        - light.turn_on:
+            id: room_light
+            brightness: 100%
+
+  - platform: status
+    name: "Connection Status"
+    entity_category: diagnostic
+
+sensor:
+  - platform: wifi_signal
+    name: "Wi-Fi Signal"
+    entity_category: diagnostic
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      entity_category: diagnostic
+  - platform: version
+    name: "ESPHome Version"
+    entity_category: diagnostic
