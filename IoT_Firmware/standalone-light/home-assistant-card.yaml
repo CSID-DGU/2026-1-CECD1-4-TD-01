@@ -1,0 +1,5 @@
+type: entities
+title: ESP12N 전등
+entities:
+  - entity: light.esp12n_light_light
+    name: 전등
