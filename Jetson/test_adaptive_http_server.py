@@ -82,6 +82,36 @@ class AdaptiveHttpServerTest(unittest.TestCase):
         event.update(overrides)
         return event
 
+    def analysis_snapshot(self, snapshot_id="http-analysis-1"):
+        timestamp = int(time.time() * 1000)
+        return {
+            "schema_version": 1,
+            "snapshot_id": snapshot_id,
+            "generated_at": timestamp,
+            "producer": "onmom-android",
+            "privacy_level": "STRUCTURED_FEATURES",
+            "contains_raw_data": False,
+            "datasets": [
+                {
+                    "category": "GALLERY",
+                    "collected_at": timestamp,
+                    "data": {
+                        "summary": {
+                            "analyzed_images": 120,
+                            "event_count": 33,
+                        },
+                        "wellbeing_domains": [
+                            {
+                                "domain": "PHYSICAL_ACTIVITY",
+                                "score": 0.61,
+                                "confidence": 0.78,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+
     def test_health_reports_context_engine(self):
         status, body = self.request("/health", authorized=False)
         self.assertEqual(200, status)
@@ -94,6 +124,42 @@ class AdaptiveHttpServerTest(unittest.TestCase):
         with self.assertRaises(HTTPError) as raised:
             self.request("/v1/context", authorized=False)
         self.assertEqual(401, raised.exception.code)
+
+    def test_structured_analysis_snapshot_post_get_and_privacy_rejection(self):
+        payload = self.analysis_snapshot()
+        status, accepted = self.request(
+            "/v1/analysis-snapshots",
+            method="POST",
+            schema="analysis-snapshot-v1",
+            body=payload,
+        )
+        self.assertEqual(202, status)
+        self.assertTrue(accepted["inserted"])
+        self.assertEqual(["GALLERY"], accepted["categories"])
+
+        status, listed = self.request(
+            "/v1/analysis-snapshots?limit=5&category=gallery"
+        )
+        self.assertEqual(200, status)
+        self.assertEqual(1, listed["count"])
+        self.assertEqual(
+            payload,
+            listed["snapshots"][0]["snapshot"],
+        )
+
+        _, health = self.request("/health", authorized=False)
+        self.assertEqual(1, health["context_engine"]["analysis_snapshots"])
+
+        rejected = self.analysis_snapshot("http-analysis-raw")
+        rejected["datasets"][0]["data"]["uri"] = "content://media/1"
+        with self.assertRaises(HTTPError) as raised:
+            self.request(
+                "/v1/analysis-snapshots",
+                method="POST",
+                schema="analysis-snapshot-v1",
+                body=rejected,
+            )
+        self.assertEqual(400, raised.exception.code)
 
     def test_camera_udp_sample_is_visible_in_http_health(self):
         timestamp = int(time.time() * 1000)

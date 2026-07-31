@@ -67,6 +67,7 @@ data class HealthDataSnapshot(
     val summary: String,
     val latest: String? = null,
     val sources: List<String> = emptyList(),
+    val analysisValues: Map<String, Double> = emptyMap(),
 )
 
 data class ExtendedHealthOverview(
@@ -78,6 +79,7 @@ data class ExtendedHealthOverview(
 data class DerivedHealthResult(
     val validCount: Int,
     val summary: String,
+    val analysisValues: Map<String, Double> = emptyMap(),
 )
 
 private val localDateTimeFormatter = DateTimeFormatter.ofPattern("MM.dd HH:mm")
@@ -133,6 +135,7 @@ suspend fun readExtendedHealthOverview(
                 }
                 if (valid.isEmpty()) null else {
                     val totalMinutes = valid.sumOf { it.second }
+                    val typeCounts = valid.groupingBy { it.first }.eachCount()
                     val types = valid.groupingBy { exerciseTypeLabel(it.first) }
                         .eachCount()
                         .entries
@@ -142,6 +145,13 @@ suspend fun readExtendedHealthOverview(
                     DerivedHealthResult(
                         validCount = valid.size,
                         summary = "${valid.size}회 · 총 ${formatMinutes(totalMinutes)}${types.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}",
+                        analysisValues = buildMap {
+                            put("session_count", valid.size.toDouble())
+                            put("total_minutes", totalMinutes.toDouble())
+                            typeCounts.entries.sortedBy { it.key }.forEach { (type, count) ->
+                                put("exercise_type_${type}_sessions", count.toDouble())
+                            }
+                        },
                     )
                 }
             },
@@ -163,19 +173,27 @@ suspend fun readExtendedHealthOverview(
                     val stageMinutes = stages.groupingBy { it.stage }.fold(0L) { total, stage ->
                         total + Duration.between(stage.startTime, stage.endTime).toMinutes().coerceAtLeast(0)
                     }
+                    val awakeMinutes = (stageMinutes[SleepSessionRecord.STAGE_TYPE_AWAKE] ?: 0L) +
+                        (stageMinutes[SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED] ?: 0L)
                     val details = buildList {
                         stageMinutes[SleepSessionRecord.STAGE_TYPE_DEEP]?.takeIf { it > 0 }?.let { add("깊은 ${formatMinutes(it)}") }
                         stageMinutes[SleepSessionRecord.STAGE_TYPE_REM]?.takeIf { it > 0 }?.let { add("REM ${formatMinutes(it)}") }
                         stageMinutes[SleepSessionRecord.STAGE_TYPE_LIGHT]?.takeIf { it > 0 }?.let { add("얕은 ${formatMinutes(it)}") }
-                        val awake = (stageMinutes[SleepSessionRecord.STAGE_TYPE_AWAKE] ?: 0L) +
-                            (stageMinutes[SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED] ?: 0L)
-                        awake.takeIf { it > 0 }?.let { add("깨어있음 ${formatMinutes(it)}") }
+                        awakeMinutes.takeIf { it > 0 }?.let { add("깨어있음 ${formatMinutes(it)}") }
                     }
                     val total = validSessions.sumOf { Duration.between(it.startTime, it.endTime).toMinutes() }
                     DerivedHealthResult(
                         validCount = validSessions.size,
                         summary = "${validSessions.size}회 · 총 ${formatMinutes(total)}" +
                             details.takeIf { it.isNotEmpty() }?.joinToString(prefix = " · ", separator = " · ").orEmpty(),
+                        analysisValues = mapOf(
+                            "session_count" to validSessions.size.toDouble(),
+                            "total_minutes" to total.toDouble(),
+                            "deep_minutes" to (stageMinutes[SleepSessionRecord.STAGE_TYPE_DEEP] ?: 0L).toDouble(),
+                            "rem_minutes" to (stageMinutes[SleepSessionRecord.STAGE_TYPE_REM] ?: 0L).toDouble(),
+                            "light_minutes" to (stageMinutes[SleepSessionRecord.STAGE_TYPE_LIGHT] ?: 0L).toDouble(),
+                            "awake_minutes" to awakeMinutes.toDouble(),
+                        ),
                     )
                 }
             },
@@ -208,10 +226,19 @@ suspend fun readExtendedHealthOverview(
                         systolic in 60.0..260.0 && diastolic in 30.0..160.0 && diastolic < systolic
                     }
                 }
-                if (valid.isEmpty()) null else DerivedHealthResult(
-                    valid.size,
-                    "평균 ${valid.map { it.first }.average().toInt()}/${valid.map { it.second }.average().toInt()} mmHg",
-                )
+                if (valid.isEmpty()) null else {
+                    val systolicMean = valid.map { it.first }.average()
+                    val diastolicMean = valid.map { it.second }.average()
+                    DerivedHealthResult(
+                        valid.size,
+                        "평균 ${systolicMean.toInt()}/${diastolicMean.toInt()} mmHg",
+                        mapOf(
+                            "sample_count" to valid.size.toDouble(),
+                            "systolic_mean_mmhg" to systolicMean,
+                            "diastolic_mean_mmhg" to diastolicMean,
+                        ),
+                    )
+                }
             },
         )
         add(
@@ -297,8 +324,14 @@ suspend fun readExtendedHealthOverview(
             ) { records ->
                 val deltas = records.flatMap { it.deltas }.map { it.delta.inCelsius }.filter { it in -10.0..10.0 }
                 if (deltas.isEmpty()) null else DerivedHealthResult(
-                    deltas.size,
-                    "기준 대비 평균 ${signedOneDecimal(deltas.average())}°C · 범위 ${signedOneDecimal(deltas.min())}~${signedOneDecimal(deltas.max())}°C",
+                    validCount = deltas.size,
+                    summary = "기준 대비 평균 ${signedOneDecimal(deltas.average())}°C · 범위 ${signedOneDecimal(deltas.min())}~${signedOneDecimal(deltas.max())}°C",
+                    analysisValues = mapOf(
+                        "sample_count" to deltas.size.toDouble(),
+                        "delta_mean_celsius" to deltas.average(),
+                        "delta_minimum_celsius" to deltas.min(),
+                        "delta_maximum_celsius" to deltas.max(),
+                    ),
                 )
             },
         )
@@ -364,7 +397,16 @@ suspend fun readExtendedHealthOverview(
                 filter = filter,
             ) { records ->
                 val values = records.map { it.elevation.inMeters }.filter { it in 0.5..20_000.0 }
-                values.takeIf { it.isNotEmpty() }?.let { DerivedHealthResult(it.size, "총 ${"%.0f".format(it.sum())} m") }
+                values.takeIf { it.isNotEmpty() }?.let {
+                    DerivedHealthResult(
+                        it.size,
+                        "총 ${"%.0f".format(it.sum())} m",
+                        mapOf(
+                            "sample_count" to it.size.toDouble(),
+                            "total_meters" to it.sum(),
+                        ),
+                    )
+                }
             },
         )
         add(
@@ -377,7 +419,16 @@ suspend fun readExtendedHealthOverview(
                 filter = filter,
             ) { records ->
                 val values = records.map { it.floors }.filter { it in 0.1..10_000.0 }
-                values.takeIf { it.isNotEmpty() }?.let { DerivedHealthResult(it.size, "총 ${"%.1f".format(it.sum())}층") }
+                values.takeIf { it.isNotEmpty() }?.let {
+                    DerivedHealthResult(
+                        it.size,
+                        "총 ${"%.1f".format(it.sum())}층",
+                        mapOf(
+                            "sample_count" to it.size.toDouble(),
+                            "total_floors" to it.sum(),
+                        ),
+                    )
+                }
             },
         )
         add(
@@ -483,6 +534,13 @@ suspend fun readExtendedHealthOverview(
                     DerivedHealthResult(
                         records.size,
                         "총 ${"%.0f".format(energy)} kcal · 탄수화물 ${"%.0f".format(carbohydrate)}g · 단백질 ${"%.0f".format(protein)}g · 지방 ${"%.0f".format(fat)}g",
+                        mapOf(
+                            "record_count" to records.size.toDouble(),
+                            "energy_kcal" to energy,
+                            "carbohydrate_grams" to carbohydrate,
+                            "protein_grams" to protein,
+                            "fat_grams" to fat,
+                        ),
                     )
                 }
             },
@@ -497,7 +555,16 @@ suspend fun readExtendedHealthOverview(
                 filter = filter,
             ) { records ->
                 val values = records.map { it.volume.inLiters }.filter { it in 0.01..20.0 }
-                values.takeIf { it.isNotEmpty() }?.let { DerivedHealthResult(it.size, "총 ${"%.2f".format(it.sum())} L") }
+                values.takeIf { it.isNotEmpty() }?.let {
+                    DerivedHealthResult(
+                        it.size,
+                        "총 ${"%.2f".format(it.sum())} L",
+                        mapOf(
+                            "sample_count" to it.size.toDouble(),
+                            "total_liters" to it.sum(),
+                        ),
+                    )
+                }
             },
         )
     }
@@ -573,6 +640,7 @@ private suspend fun <T : Record> HealthConnectClient.collectSnapshot(
             ?.atZone(ZoneId.systemDefault())
             ?.format(localDateTimeFormatter),
         sources = sourceLabels(records),
+        analysisValues = derived.analysisValues,
     )
 }
 
@@ -645,6 +713,12 @@ private fun summarizeNumbers(values: List<Double>, unit: String): DerivedHealthR
     return DerivedHealthResult(
         validCount = valid.size,
         summary = "평균 ${"%.1f".format(valid.average())} $unit · 범위 ${"%.1f".format(valid.min())}~${"%.1f".format(valid.max())} $unit",
+        analysisValues = mapOf(
+            "sample_count" to valid.size.toDouble(),
+            "mean" to valid.average(),
+            "minimum" to valid.min(),
+            "maximum" to valid.max(),
+        ),
     )
 }
 
@@ -661,6 +735,12 @@ private fun summarizeLatestChange(
         summary = buildString {
             append("최근 ${"%.1f".format(latest)} $unit")
             if (change != null && abs(change) >= 0.05) append(" · 기간 변화 ${signedOneDecimal(change)} $unit")
+        },
+        analysisValues = buildMap {
+            put("sample_count", valid.size.toDouble())
+            put("first", valid.first().second)
+            put("latest", latest)
+            if (change != null) put("change", change)
         },
     )
 }

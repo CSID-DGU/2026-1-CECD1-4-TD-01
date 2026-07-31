@@ -487,7 +487,10 @@ fun ChatScreen(
         )
     }
     if (showJetsonSync) {
-        JetsonSyncDialog(onDismiss = { showJetsonSync = false })
+        JetsonSyncDialog(
+            developerMode = !presentationMode,
+            onDismiss = { showJetsonSync = false },
+        )
     }
     if (showSessionList) {
         SessionListDialog(

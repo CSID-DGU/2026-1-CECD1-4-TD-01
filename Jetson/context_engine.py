@@ -683,6 +683,36 @@ class ContextEngine:
                     CREATE INDEX IF NOT EXISTS idx_summaries_category_time
                         ON derived_summaries(category, updated_at);
 
+                    CREATE TABLE IF NOT EXISTS analysis_snapshots (
+                        snapshot_id TEXT PRIMARY KEY,
+                        generated_at INTEGER NOT NULL,
+                        received_at INTEGER NOT NULL,
+                        producer TEXT NOT NULL,
+                        categories_json TEXT NOT NULL,
+                        payload_json TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_analysis_snapshots_time
+                        ON analysis_snapshots(generated_at);
+                    CREATE INDEX IF NOT EXISTS idx_analysis_snapshots_received
+                        ON analysis_snapshots(received_at);
+
+                    CREATE TABLE IF NOT EXISTS guardian_alerts (
+                        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                        alert_id TEXT NOT NULL UNIQUE,
+                        occurred_at INTEGER NOT NULL,
+                        received_at INTEGER NOT NULL,
+                        severity TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        acknowledged_at INTEGER
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_guardian_alerts_sequence
+                        ON guardian_alerts(sequence);
+                    CREATE INDEX IF NOT EXISTS idx_guardian_alerts_time
+                        ON guardian_alerts(occurred_at);
+
                     CREATE TABLE IF NOT EXISTS session_outcomes (
                         session_id TEXT PRIMARY KEY,
                         started_at INTEGER NOT NULL,
@@ -951,6 +981,203 @@ class ContextEngine:
             "inserted": inserted,
             "transfer_id": payload["transfer_id"],
         }
+
+    def ingest_analysis_snapshot(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist structured developer features outside counseling context."""
+
+        received_at = self.clock()
+        categories = [dataset["category"] for dataset in payload["datasets"]]
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO analysis_snapshots(
+                    snapshot_id, generated_at, received_at, producer,
+                    categories_json, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["snapshot_id"],
+                    payload["generated_at"],
+                    received_at,
+                    payload["producer"],
+                    json.dumps(categories, sort_keys=True),
+                    json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            inserted = cursor.rowcount == 1
+            self._audit(
+                connection,
+                (
+                    "analysis_snapshot_ingested"
+                    if inserted
+                    else "analysis_snapshot_duplicate"
+                ),
+                payload["snapshot_id"],
+                {
+                    "categories": categories,
+                    "dataset_count": len(categories),
+                },
+                received_at,
+            )
+        return {
+            "accepted": True,
+            "inserted": inserted,
+            "snapshot_id": payload["snapshot_id"],
+            "categories": categories,
+        }
+
+    def list_analysis_snapshots(
+        self,
+        *,
+        limit: int = 10,
+        category: str | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
+            raise ContextEngineError("analysis snapshot limit must be 1 to 50")
+        normalized_category = category.strip().upper() if category else None
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT received_at, categories_json, payload_json
+                FROM analysis_snapshots
+                ORDER BY generated_at DESC
+                LIMIT 250
+                """
+            ).fetchall()
+        snapshots = []
+        for row in rows:
+            categories = json.loads(row["categories_json"])
+            if normalized_category and normalized_category not in categories:
+                continue
+            snapshots.append(
+                {
+                    "received_at": int(row["received_at"]),
+                    "snapshot": json.loads(row["payload_json"]),
+                }
+            )
+            if len(snapshots) >= limit:
+                break
+        return {
+            "schema": "analysis-snapshot-list-v1",
+            "count": len(snapshots),
+            "category": normalized_category,
+            "snapshots": snapshots,
+        }
+
+    def ingest_guardian_alert(self, alert: dict[str, Any]) -> dict[str, Any]:
+        received_at = self.clock()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO guardian_alerts(
+                    alert_id, occurred_at, received_at, severity, category,
+                    source, title, message, acknowledged_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    alert["alert_id"],
+                    alert["occurred_at"],
+                    received_at,
+                    alert["severity"],
+                    alert["category"],
+                    alert["source"],
+                    alert["title"],
+                    alert["message"],
+                ),
+            )
+            inserted = cursor.rowcount == 1
+            row = connection.execute(
+                "SELECT sequence FROM guardian_alerts WHERE alert_id = ?",
+                (alert["alert_id"],),
+            ).fetchone()
+            self._audit(
+                connection,
+                "guardian_alert_ingested" if inserted else "guardian_alert_duplicate",
+                alert["alert_id"],
+                {
+                    "severity": alert["severity"],
+                    "category": alert["category"],
+                },
+                received_at,
+            )
+        return {
+            "accepted": True,
+            "inserted": inserted,
+            "alert_id": alert["alert_id"],
+            "sequence": int(row["sequence"]),
+        }
+
+    def list_guardian_alerts(
+        self,
+        *,
+        after_sequence: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        if (
+            not isinstance(after_sequence, int)
+            or isinstance(after_sequence, bool)
+            or after_sequence < 0
+        ):
+            raise ContextEngineError("after_sequence must be a non-negative integer")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ContextEngineError("guardian alert limit must be 1 to 100")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT sequence, alert_id, occurred_at, received_at, severity,
+                       category, source, title, message, acknowledged_at
+                FROM guardian_alerts
+                WHERE sequence > ?
+                ORDER BY sequence ASC
+                LIMIT ?
+                """,
+                (after_sequence, limit),
+            ).fetchall()
+        alerts = [
+            {
+                "sequence": int(row["sequence"]),
+                "alert_id": row["alert_id"],
+                "occurred_at": int(row["occurred_at"]),
+                "received_at": int(row["received_at"]),
+                "severity": row["severity"],
+                "category": row["category"],
+                "source": row["source"],
+                "title": row["title"],
+                "message": row["message"],
+                "acknowledged": row["acknowledged_at"] is not None,
+                "acknowledged_at": row["acknowledged_at"],
+            }
+            for row in rows
+        ]
+        return {
+            "schema": "guardian-alert-list-v1",
+            "count": len(alerts),
+            "next_cursor": alerts[-1]["sequence"] if alerts else after_sequence,
+            "alerts": alerts,
+        }
+
+    def acknowledge_guardian_alert(self, alert_id: str) -> dict[str, Any]:
+        _validate_identifier(alert_id, "alert_id")
+        acknowledged_at = self.clock()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE guardian_alerts
+                SET acknowledged_at = COALESCE(acknowledged_at, ?)
+                WHERE alert_id = ?
+                """,
+                (acknowledged_at, alert_id),
+            )
+            if cursor.rowcount != 1:
+                raise ContextEngineError("guardian alert not found")
+            self._audit(
+                connection,
+                "guardian_alert_acknowledged",
+                alert_id,
+                {},
+                acknowledged_at,
+            )
+        return {"acknowledged": True, "alert_id": alert_id}
 
     def record_session_outcome(self, payload: Any) -> dict[str, Any]:
         outcome = validate_session_outcome(payload, self.config)
@@ -2335,6 +2562,9 @@ class ContextEngine:
         event_cutoff = timestamp - int(
             self.config.retention.analysis_events_days * MILLIS_PER_DAY
         )
+        snapshot_cutoff = timestamp - int(
+            self.config.retention.analysis_snapshots_days * MILLIS_PER_DAY
+        )
         card_cutoff = timestamp - int(
             self.config.retention.context_cards_days * MILLIS_PER_DAY
         )
@@ -2356,6 +2586,14 @@ class ContextEngine:
                     ),
                 ),
             ).rowcount
+            expired_snapshots = connection.execute(
+                "DELETE FROM analysis_snapshots WHERE generated_at < ?",
+                (snapshot_cutoff,),
+            ).rowcount
+            expired_guardian_alerts = connection.execute(
+                "DELETE FROM guardian_alerts WHERE occurred_at < ?",
+                (event_cutoff,),
+            ).rowcount
             expired_cards = connection.execute(
                 "DELETE FROM context_cards WHERE expires_at < ? OR generated_at < ?",
                 (timestamp, card_cutoff),
@@ -2366,6 +2604,8 @@ class ContextEngine:
             ).rowcount
         return {
             "events": expired_events,
+            "analysis_snapshots": expired_snapshots,
+            "guardian_alerts": expired_guardian_alerts,
             "context_cards": expired_cards,
             "audit_rows": expired_audit,
         }
@@ -2376,6 +2616,18 @@ class ContextEngine:
             event_count = int(connection.execute("SELECT COUNT(*) FROM analysis_events").fetchone()[0])
             summary_count = int(connection.execute("SELECT COUNT(*) FROM derived_summaries").fetchone()[0])
             outcome_count = int(connection.execute("SELECT COUNT(*) FROM session_outcomes").fetchone()[0])
+            snapshot_count = int(
+                connection.execute("SELECT COUNT(*) FROM analysis_snapshots").fetchone()[0]
+            )
+            last_snapshot = connection.execute(
+                "SELECT MAX(received_at) FROM analysis_snapshots"
+            ).fetchone()[0]
+            guardian_alert_count = int(
+                connection.execute("SELECT COUNT(*) FROM guardian_alerts").fetchone()[0]
+            )
+            unacknowledged_alert_count = int(
+                connection.execute("SELECT COUNT(*) FROM guardian_alerts WHERE acknowledged_at IS NULL").fetchone()[0]
+            )
             pending_outcomes = int(
                 connection.execute("SELECT COUNT(*) FROM session_outcomes WHERE trained = 0").fetchone()[0]
             )
@@ -2391,6 +2643,10 @@ class ContextEngine:
             "database_ready": self.database_path.exists(),
             "events": event_count,
             "derived_summaries": summary_count,
+            "analysis_snapshots": snapshot_count,
+            "last_analysis_snapshot_received_at": last_snapshot,
+            "guardian_alerts": guardian_alert_count,
+            "unacknowledged_guardian_alerts": unacknowledged_alert_count,
             "session_outcomes": outcome_count,
             "pending_training_outcomes": pending_outcomes,
             "policy_version": version,

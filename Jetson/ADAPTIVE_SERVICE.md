@@ -338,6 +338,8 @@ python3 onmom_client.py rollback --version 1
 |---|---|---|
 | GET | `/health` | 서비스·DB·수면 gate 상태 |
 | POST | `/v1/derived-insights` | 기존 Android 파생 요약 |
+| POST | `/v1/analysis-snapshots` | 개발자 구조화 분석 수치 저장 |
+| GET | `/v1/analysis-snapshots` | 최근 분석 수치 조회 |
 | POST | `/v1/analysis-events` | IoT/카메라/앱 파생 이벤트 |
 | POST | `/v1/session-outcomes` | 상담 전후 정서와 사용 전략 |
 | GET | `/v1/context` | 현재 상담용 컨텍스트 |
@@ -351,6 +353,7 @@ python3 onmom_client.py rollback --version 1
 ## 7. 데이터 보존과 제외
 
 - AnalysisEvent: 기본 30일
+- 개발자 구조화 분석 스냅샷: 기본 30일, 상담 맥락·학습과 분리
 - ContextCard: 만료 또는 90일
 - 감사 로그: 180일
 - 정책 버전과 상담 결과: 현재 구현에서는 명시 삭제 전까지

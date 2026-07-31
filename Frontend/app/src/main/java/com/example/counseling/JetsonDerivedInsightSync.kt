@@ -154,6 +154,7 @@ internal fun isPrivateLanIpv4(host: String): Boolean {
         values[0] == 10 -> true
         values[0] == 172 && values[1] in 16..31 -> true
         values[0] == 192 && values[1] == 168 -> true
+        values[0] == 100 && values[1] in 64..127 -> true
         values[0] == 169 && values[1] == 254 -> true
         else -> false
     }
@@ -178,7 +179,7 @@ internal fun normalizeJetsonEndpoint(
         val debugPrivateIp = allowPrivateLanHttp && isPrivateLanIpv4(host)
         require(host.equals("iot.local", ignoreCase = true) || debugPrivateIp) {
             "암호화되지 않은 http는 iot.local에서만 허용됩니다. 개발자 빌드에서는 " +
-                "사설 LAN IPv4 주소(10.x, 172.16~31.x, 192.168.x, 169.254.x)도 사용할 수 있습니다. " +
+                "사설 LAN IPv4 주소와 Tailscale 주소(100.64~127.x)도 사용할 수 있습니다. " +
                 "그 외 주소는 https를 사용해 주세요."
         }
     }

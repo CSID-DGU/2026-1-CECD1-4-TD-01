@@ -2,6 +2,7 @@
 # Add these secrets:
 #
 # onmom_jetson_event_url: "http://JETSON_IP:8765/v1/analysis-events"
+# onmom_jetson_alert_url: "http://JETSON_IP:8765/v1/guardian-alerts"
 # onmom_jetson_authorization: "Bearer THE_TOKEN_FROM_JETSON_INSTALL"
 #
 # The existing RFID automation should call script.onmom_rfid_enter or
@@ -15,6 +16,16 @@ rest_command:
     headers:
       Authorization: !secret onmom_jetson_authorization
       X-OnMom-Schema: "analysis-event-v1"
+    payload: "{{ payload }}"
+    timeout: 10
+
+  onmom_guardian_alert:
+    url: !secret onmom_jetson_alert_url
+    method: POST
+    content_type: "application/json"
+    headers:
+      Authorization: !secret onmom_jetson_authorization
+      X-OnMom-Schema: "guardian-alert-v1"
     payload: "{{ payload }}"
     timeout: 10
 
@@ -97,6 +108,26 @@ automation:
                 }
               } | tojson
             }}
+      - if:
+          - condition: template
+            value_template: "{{ not (trigger.event.data.authorized | default(true)) }}"
+        then:
+          - action: rest_command.onmom_guardian_alert
+            data:
+              payload: >-
+                {{
+                  {
+                    "schema_version": 1,
+                    "alert_id": "ha-access-alert-" ~ trigger.event.context.id,
+                    "occurred_at": (as_timestamp(trigger.event.time_fired) * 1000) | int,
+                    "severity": "HIGH",
+                    "category": "ACCESS",
+                    "title": "승인되지 않은 출입 시도",
+                    "message": "현관 출입 상태를 확인해 주세요.",
+                    "source": "home_assistant.rfid",
+                    "contains_raw_data": false
+                  } | tojson
+                }}
 
   - id: onmom_forward_door_state
     alias: "On-mom - forward derived door state"

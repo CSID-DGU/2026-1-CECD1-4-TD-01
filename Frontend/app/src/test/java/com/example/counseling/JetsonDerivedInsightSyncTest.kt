@@ -51,6 +51,10 @@ class JetsonDerivedInsightSyncTest {
             normalizeJetsonEndpoint("http://192.168.0.22:8765", allowPrivateLanHttp = true).toString(),
         )
         assertEquals(
+            "http://100.93.236.68:8765/v1/derived-insights",
+            normalizeJetsonEndpoint("http://100.93.236.68:8765", allowPrivateLanHttp = true).toString(),
+        )
+        assertEquals(
             "https://jetson.example.com/v1/derived-insights",
             normalizeJetsonEndpoint("https://jetson.example.com").toString(),
         )
@@ -77,7 +81,12 @@ class JetsonDerivedInsightSyncTest {
         assertTrue(isPrivateLanIpv4("172.31.255.254"))
         assertTrue(isPrivateLanIpv4("192.168.100.5"))
         assertTrue(isPrivateLanIpv4("169.254.20.3"))
+        assertTrue(isPrivateLanIpv4("100.64.0.1"))
+        assertTrue(isPrivateLanIpv4("100.93.236.68"))
+        assertTrue(isPrivateLanIpv4("100.127.255.254"))
         assertFalse(isPrivateLanIpv4("172.32.0.1"))
+        assertFalse(isPrivateLanIpv4("100.63.255.255"))
+        assertFalse(isPrivateLanIpv4("100.128.0.1"))
         assertFalse(isPrivateLanIpv4("8.8.8.8"))
         assertFalse(isPrivateLanIpv4("192.168.1"))
         assertFalse(isPrivateLanIpv4("not-an-ip"))
