@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "home_assistant_url": "http://127.0.0.1:8123",
+  "token_file": "~/.config/onmom/home_assistant_token",
+  "devices": [
+    {
+      "id": "living_room_light",
+      "name": "거실 조명",
+      "entity_id": "light.living_room",
+      "kind": "LIGHT",
+      "actions": ["TURN_ON", "TURN_OFF", "TOGGLE"]
+    },
+    {
+      "id": "bedroom_plug",
+      "name": "침실 플러그",
+      "entity_id": "switch.bedroom_plug",
+      "kind": "SWITCH",
+      "actions": ["TURN_ON", "TURN_OFF", "TOGGLE"]
+    }
+  ]
+}

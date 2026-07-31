@@ -28,7 +28,8 @@ class AdaptiveConfigTest(unittest.TestCase):
     def test_default_config_has_all_thresholds_and_strategy_prompts(self):
         config = load_adaptive_policy_config()
 
-        self.assertEqual(2, config.config_version)
+        self.assertEqual(3, config.config_version)
+        self.assertEqual(30, config.retention.analysis_snapshots_days)
         self.assertEqual(0.01, config.learning.learning_rate)
         self.assertEqual(3, config.context.recommended_strategies)
         self.assertEqual(set(STRATEGY_NAMES), set(config.prompts.strategy_instructions))

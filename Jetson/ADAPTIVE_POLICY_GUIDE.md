@@ -25,7 +25,7 @@ curl http://localhost:8765/health
 
 ```json
 {
-  "config_version": 1,
+  "config_version": 3,
   "file": "adaptive_policy.ini",
   "learning_rate": 0.01,
   "max_policy_delta_per_run": 0.02,
@@ -119,7 +119,9 @@ RFID만으로 실제 재실 시간, 사회적 고립, 수면 문제를 확정하
 
 ### `[context]`와 `[retention]`
 
-`[context]`는 한 답변에 사용할 카드 수, 전략 수와 관련성 점수를 조절합니다. `[retention]`은 SQLite 이벤트·카드·감사 로그 보존 기간을 조절합니다.
+`[context]`는 한 답변에 사용할 카드 수, 전략 수와 관련성 점수를 조절합니다. `[retention]`은 SQLite 이벤트·분석 스냅샷·카드·감사 로그 보존 기간을 조절합니다.
+
+`analysis_snapshots_days`는 개발자 화면에서 수동으로 보낸 구조화 분석 수치의 보존 일수입니다. 이 자료는 상담 카드나 정책 학습에 사용되지 않습니다.
 
 ## 3. 상황별 프롬프트 수정
 

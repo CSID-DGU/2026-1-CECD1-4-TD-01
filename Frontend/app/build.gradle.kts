@@ -12,13 +12,14 @@ android {
         applicationId = "com.example.counseling"
         minSdk = 28
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.3.0"
+        versionCode = 18
+        versionName = "2.0.1"
 
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     sourceSets {
@@ -53,7 +54,7 @@ tasks.register("copyDatedDebugApk") {
         copy {
             from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
             into(layout.buildDirectory.dir("outputs/apk/debug"))
-            rename { "Counseling_07_29_v1.3.0_debug.apk" }
+            rename { "Counseling_07_31_v2.0.1_debug.apk" }
         }
     }
 }

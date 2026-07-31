@@ -3,7 +3,9 @@
 이 서버는 Android, Home Assistant/RFID, 자세, rPPG 분석기가 만든 파생 결과만 누적하고 상담용 맥락과 제한된 응답 전략 가중치를 만듭니다. 사진·음성 파일, URI, 통화번호, RFID UID, 앱 이벤트 원문, 대화 원문은 스키마 단계에서 거부합니다.
 
 전체 설치·연동·운영 방법은 [ADAPTIVE_SERVICE.md](ADAPTIVE_SERVICE.md)를 먼저 확인하세요.
+개발자 구조화 수치 전송·조회 방법은 [ANALYSIS_SNAPSHOT.md](ANALYSIS_SNAPSHOT.md)에 있습니다.
 카메라 분석 모듈 연결 규격은 [CAMERA_BRIDGE.md](CAMERA_BRIDGE.md)에 있습니다.
+보호자 위험 알림과 IoT 제어 설정은 [GUARDIAN_IOT.md](GUARDIAN_IOT.md)에 있습니다.
 
 ## 1. Jetson 영구 설치
 
@@ -55,7 +57,9 @@ curl http://localhost:8765/health
 
 개발자 APK만 사설 IPv4의 평문 HTTP를 허용합니다. release APK나 공인 주소는 HTTPS가 필요합니다.
 
-`저장하고 지금 전송`을 한 번 누르면 주소는 앱 설정에, 토큰은 Android Keystore 암호화 키로 보호되어 저장됩니다. 앱이나 Jetson을 재시작해도 다시 입력할 필요가 없습니다. 앱 데이터 삭제·재설치 또는 토큰 교체 시에만 다시 입력합니다.
+`상담용 파생 요약 전송`을 한 번 누르면 주소는 앱 설정에, 토큰은 Android Keystore 암호화 키로 보호되어 저장됩니다. 앱이나 Jetson을 재시작해도 다시 입력할 필요가 없습니다. 앱 데이터 삭제·재설치 또는 토큰 교체 시에만 다시 입력합니다.
+
+분석 단계의 숫자·범주형 결과가 필요하면 같은 창의 `개발자 분석 수치만 수동 전송`을 누릅니다. 이 동작은 자동 실행되지 않으며 상담 프롬프트·정책 학습과 분리된 테이블에 저장됩니다.
 
 토큰을 저장한 뒤에는 상담 중 다음 파생 정보가 자동 누적됩니다.
 
@@ -65,7 +69,16 @@ curl http://localhost:8765/health
 
 대화 원문은 전송하지 않습니다. 앱 재시작 사이의 전후 비교도 원문 없이 파생 수치와 전략만 앱 내부에 보존합니다.
 
-## 3. 저장 위치
+## 3. 보호자 알림과 IoT
+
+- 위험 신호 입력: `POST /v1/guardian-alerts`
+- 보호자 앱 조회: `GET /v1/guardian-alerts`
+- 장치 조회: `GET /v1/iot/devices`
+- 허용 동작 실행: `POST /v1/iot/commands`
+
+IoT 제어 전 `iot_devices.json`과 Home Assistant 장기 액세스 토큰을 설정하세요.
+
+## 4. 저장 위치
 
 ```text
 ~/Jetson/data/latest_derived_insights.json
@@ -73,7 +86,7 @@ curl http://localhost:8765/health
 ~/.config/onmom/jetson_sync_token
 ```
 
-## 4. HTTPS 직접 실행
+## 5. HTTPS 직접 실행
 
 ```bash
 python3 derived_insight_server.py \
@@ -85,7 +98,7 @@ python3 derived_insight_server.py \
 
 앱 주소는 `https://호스트:8765/v1/derived-insights`로 입력합니다.
 
-## 5. 테스트
+## 6. 테스트
 
 저장소 루트에서:
 

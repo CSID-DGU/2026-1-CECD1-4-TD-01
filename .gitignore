@@ -43,3 +43,10 @@ Frontend/.idea/modules.xml
 Frontend/.idea/workspace.xml
 Frontend/.idea/navEditor.xml
 Frontend/.idea/assetWizardSettings.xml
+
+# Local Jetson deployment archives (keep release bundles out of Git history)
+Jetson_OnMom_*.zip
+
+# Machine-local Jetson secrets, device allow-list, and backups
+Jetson/iot_devices.json
+.jetson_backup/

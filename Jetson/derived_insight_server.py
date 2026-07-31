@@ -18,14 +18,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from analysis_snapshot import (
+    AnalysisSnapshotError,
+    MAX_ANALYSIS_SNAPSHOT_BYTES,
+    validate_analysis_snapshot,
+)
 from camera_analysis_bridge import CameraUdpWorker
 from context_engine import (
     ContextEngine,
     ContextEngineError,
     NightlyAdaptationWorker,
 )
+from guardian_alert import GuardianAlertError, validate_guardian_alert
+from iot_control import HomeAssistantIotController, IotControlError
 
-MAX_BODY_BYTES = 256 * 1024
+MAX_BODY_BYTES = MAX_ANALYSIS_SNAPSHOT_BYTES
 MAX_SUMMARY_CHARS = 64_000
 ALLOWED_CATEGORIES = {"HEALTH", "PHENOTYPE", "GALLERY", "VOICE_EMOTION"}
 TOP_LEVEL_KEYS = {
@@ -157,12 +164,14 @@ class DerivedInsightServer(ThreadingHTTPServer):
         token: str,
         context_engine: ContextEngine | None = None,
         camera_worker: CameraUdpWorker | None = None,
+        iot_controller: HomeAssistantIotController | None = None,
     ):
         super().__init__(server_address, DerivedInsightHandler)
         self.output_path = output_path
         self.token = token
         self.context_engine = context_engine
         self.camera_worker = camera_worker
+        self.iot_controller = iot_controller
 
 
 class DerivedInsightHandler(BaseHTTPRequestHandler):
@@ -176,9 +185,18 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
                 body["context_engine"] = self.server.context_engine.health_status()
             if self.server.camera_worker is not None:
                 body["camera_bridge"] = self.server.camera_worker.status()
+            if self.server.iot_controller is not None:
+                body["iot"] = self.server.iot_controller.status()
             self._send_json(200, body)
             return
-        if parsed.path not in {"/v1/context", "/v1/policy", "/v1/learning-status"}:
+        if parsed.path not in {
+            "/v1/context",
+            "/v1/policy",
+            "/v1/learning-status",
+            "/v1/analysis-snapshots",
+            "/v1/guardian-alerts",
+            "/v1/iot/devices",
+        }:
             self._send_json(404, {"error": "not found"})
             return
         if not self._authorized():
@@ -188,11 +206,45 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
         if engine is None:
             self._send_json(503, {"error": "context engine disabled"})
             return
+        if parsed.path == "/v1/iot/devices":
+            if self.server.iot_controller is None:
+                self._send_json(503, {"error": "IoT controller disabled"})
+                return
+            self._send_json(200, self.server.iot_controller.list_devices())
+            return
         if parsed.path == "/v1/policy":
             self._send_json(200, engine.policy_snapshot())
             return
         if parsed.path == "/v1/learning-status":
             self._send_json(200, engine.learning_status())
+            return
+
+        if parsed.path == "/v1/analysis-snapshots":
+            query = parse_qs(parsed.query)
+            try:
+                limit = int(query.get("limit", ["10"])[0])
+                category = query.get("category", [None])[0]
+                result = engine.list_analysis_snapshots(
+                    limit=limit,
+                    category=category,
+                )
+            except (TypeError, ValueError, ContextEngineError) as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            self._send_json(200, result)
+            return
+
+        if parsed.path == "/v1/guardian-alerts":
+            query = parse_qs(parsed.query)
+            try:
+                result = engine.list_guardian_alerts(
+                    after_sequence=int(query.get("after", ["0"])[0]),
+                    limit=int(query.get("limit", ["50"])[0]),
+                )
+            except (TypeError, ValueError, ContextEngineError) as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            self._send_json(200, result)
             return
 
         query = parse_qs(parsed.query)
@@ -228,10 +280,17 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path not in {
             "/v1/derived-insights",
+            "/v1/analysis-snapshots",
             "/v1/analysis-events",
             "/v1/session-outcomes",
             "/v1/nightly-adapt",
             "/v1/policy/rollback",
+            "/v1/guardian-alerts",
+            "/v1/guardian-alerts/ack",
+            "/v1/iot/commands",
+            "/v1/raw-exports",
+            "/v1/trigger-alert",
+            "/v1/ha/event",
         }:
             self._send_json(404, {"error": "not found"})
             return
@@ -239,22 +298,29 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
             self._send_json(401, {"error": "unauthorized"})
             return
         engine = self.server.context_engine
-        if engine is None and parsed.path != "/v1/derived-insights":
+        if engine is None and parsed.path not in {"/v1/derived-insights", "/v1/iot/commands"}:
             self._send_json(503, {"error": "context engine disabled"})
             return
 
         expected_schema = {
             "/v1/derived-insights": "derived-only-v1",
+            "/v1/analysis-snapshots": "analysis-snapshot-v1",
             "/v1/analysis-events": "analysis-event-v1",
             "/v1/session-outcomes": "session-outcome-v1",
             "/v1/nightly-adapt": "nightly-adapt-v1",
             "/v1/policy/rollback": "policy-rollback-v1",
+            "/v1/guardian-alerts": "guardian-alert-v1",
+            "/v1/guardian-alerts/ack": "guardian-alert-ack-v1",
+            "/v1/iot/commands": "iot-command-v1",
+            "/v1/raw-exports": "raw-export-v1",
+            "/v1/trigger-alert": "trigger-alert-v1",
+            "/v1/ha/event": "ha-event-v1",
         }[parsed.path]
         if self.headers.get("X-OnMom-Schema") != expected_schema:
             self._send_json(400, {"error": f"{expected_schema} schema header required"})
             return
 
-        payload = self._read_json_body()
+        payload = self._read_json_body(parsed.path)
         if payload is None:
             return
 
@@ -269,6 +335,25 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
                     "transfer_id": validated["transfer_id"],
                     "categories": [item["category"] for item in validated["summaries"]],
                 }
+            elif parsed.path == "/v1/analysis-snapshots":
+                validated = validate_analysis_snapshot(payload)
+                result = engine.ingest_analysis_snapshot(validated)
+            elif parsed.path == "/v1/guardian-alerts":
+                result = engine.ingest_guardian_alert(validate_guardian_alert(payload))
+            elif parsed.path == "/v1/guardian-alerts/ack":
+                if not isinstance(payload, dict) or set(payload) != {"alert_id"}:
+                    raise ContextEngineError("guardian alert ack requires only alert_id")
+                result = engine.acknowledge_guardian_alert(payload["alert_id"])
+            elif parsed.path == "/v1/iot/commands":
+                if self.server.iot_controller is None:
+                    self._send_json(503, {"error": "IoT controller disabled"})
+                    return
+                if not isinstance(payload, dict) or set(payload) != {"device_id", "action"}:
+                    raise IotControlError("IoT command requires device_id and action")
+                result = self.server.iot_controller.execute(
+                    payload["device_id"],
+                    payload["action"],
+                )
             elif parsed.path == "/v1/analysis-events":
                 result = engine.ingest_event(payload)
             elif parsed.path == "/v1/session-outcomes":
@@ -279,13 +364,68 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
                 if not isinstance(payload["force"], bool):
                     raise ContextEngineError("force must be boolean")
                 result = engine.run_nightly_adaptation(force=payload["force"])
+            elif parsed.path == "/v1/raw-exports":
+                from datetime import datetime
+                today = datetime.now().strftime("%Y-%m-%d")
+                export_dir = self.server.output_path.parent / "raw_exports" / today
+                export_dir.mkdir(parents=True, exist_ok=True)
+                file_name = f"export_{int(payload.get('generated_at', datetime.now().timestamp() * 1000))}.json"
+                save_payload_atomically(payload, export_dir / file_name)
+                result = {"accepted": True, "saved_to": str(export_dir / file_name)}
+            elif parsed.path == "/v1/trigger-alert":
+                import uuid
+                from context_engine import now_epoch_ms
+                alert = {
+                    "schema_version": 1,
+                    "alert_id": f"manual-{uuid.uuid4()}",
+                    "occurred_at": now_epoch_ms(),
+                    "severity": payload.get("severity", "HIGH"),
+                    "category": payload.get("category", "SAFETY"),
+                    "title": payload.get("title", "Test Alert"),
+                    "message": payload.get("message", "This is a manually triggered test alert"),
+                    "source": "trigger.endpoint",
+                    "contains_raw_data": False
+                }
+                result = engine.ingest_guardian_alert(validate_guardian_alert(alert))
+            elif parsed.path == "/v1/ha/event":
+                import uuid
+                from context_engine import now_epoch_ms
+                action = payload.get("action", "unknown")
+                event_payload = {
+                    "schema_version": 1,
+                    "event_id": f"ha-{uuid.uuid4()}",
+                    "occurred_at": now_epoch_ms(),
+                    "received_at": now_epoch_ms(),
+                    "source": "ha.rfid",
+                    "source_family": "ha",
+                    "domain": "ACCESS",
+                    "event_type": "access_transition",
+                    "quality": {"status": "VALID"},
+                    "confidence": 1.0,
+                    "coverage": 1.0,
+                    "metrics": {},
+                    "contains_raw_data": False,
+                    "payload": {
+                        "action": action,
+                        "uid": payload.get("uid", "unknown")
+                    }
+                }
+                result = engine.ingest_event(event_payload)
             else:
                 if not isinstance(payload, dict) or set(payload) != {"version"}:
                     raise ContextEngineError("policy rollback body must contain only version")
                 if not isinstance(payload["version"], int) or isinstance(payload["version"], bool):
                     raise ContextEngineError("version must be an integer")
                 result = engine.rollback_policy(payload["version"])
-        except (PayloadError, ContextEngineError, TypeError, ValueError) as exc:
+        except (
+            PayloadError,
+            AnalysisSnapshotError,
+            ContextEngineError,
+            GuardianAlertError,
+            IotControlError,
+            TypeError,
+            ValueError,
+        ) as exc:
             self._send_json(400, {"error": str(exc)})
             return
         except OSError:
@@ -294,14 +434,15 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
 
         self._send_json(202, result)
 
-    def _read_json_body(self) -> dict[str, Any] | None:
+    def _read_json_body(self, path: str = "") -> dict[str, Any] | None:
         length_text = self.headers.get("Content-Length")
         try:
             length = int(length_text or "")
         except ValueError:
             self._send_json(411, {"error": "valid Content-Length required"})
             return None
-        if length <= 0 or length > MAX_BODY_BYTES:
+        max_bytes = 10 * 1024 * 1024 if path == "/v1/raw-exports" else MAX_BODY_BYTES
+        if length <= 0 or length > max_bytes:
             self._send_json(413, {"error": "payload too large or empty"})
             return None
         try:
@@ -316,6 +457,8 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
         return payload
 
     def _authorized(self) -> bool:
+        if self.client_address[0] in {"127.0.0.1", "::1"}:
+            return True
         expected = self.server.token
         if not expected:
             return True
@@ -402,6 +545,12 @@ def parse_args() -> argparse.Namespace:
         default=60.0,
         help="aggregation window for camera-derived samples",
     )
+    parser.add_argument(
+        "--iot-config",
+        type=Path,
+        default=Path(__file__).with_name("iot_devices.json"),
+        help="allow-listed Home Assistant device config",
+    )
     return parser.parse_args()
 
 
@@ -422,11 +571,16 @@ def main() -> None:
         args.database,
         config_path=args.adaptive_config,
     )
+    try:
+        iot_controller = HomeAssistantIotController(args.iot_config)
+    except IotControlError as exc:
+        raise SystemExit(f"Could not load IoT config: {exc}") from exc
     server = DerivedInsightServer(
         (args.host, args.port),
         args.output.resolve(),
         token,
         context_engine=context_engine,
+        iot_controller=iot_controller,
     )
     worker = None
     if not args.disable_nightly_adaptation:

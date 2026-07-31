@@ -18,6 +18,7 @@ data class GalleryAnalysisCacheSnapshot(
     val updatedAt: Long,
     val contextText: String,
     val interestItems: List<GalleryInterestItem> = emptyList(),
+    val structuredAnalysisJson: String? = null,
 )
 
 data class GalleryInterestItem(
@@ -61,6 +62,7 @@ suspend fun refreshGalleryAnalysisCacheIfNeeded(
         updatedAt = System.currentTimeMillis(),
         contextText = buildGalleryPromptContext(result),
         interestItems = buildGalleryInterestItems(result),
+        structuredAnalysisJson = buildGalleryStructuredAnalysisJson(result),
     )
     writeGalleryAnalysisCache(context, snapshot)
     replaceRagSlot(
@@ -100,6 +102,11 @@ suspend fun readGalleryAnalysisCache(context: Context): GalleryAnalysisCacheSnap
                     }
                 }
             }.orEmpty(),
+            structuredAnalysisJson = json.optString("structuredAnalysisJson")
+                .trim()
+                .takeIf {
+                    it.isNotBlank() && !it.equals("null", ignoreCase = true)
+                },
         )
     }.getOrNull()
 }
@@ -113,6 +120,7 @@ private suspend fun writeGalleryAnalysisCache(
         .put("imageCount", snapshot.imageCount)
         .put("updatedAt", snapshot.updatedAt)
         .put("contextText", snapshot.contextText)
+        .put("structuredAnalysisJson", snapshot.structuredAnalysisJson)
         .put(
             "interestItems",
             JSONArray().apply {

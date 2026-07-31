@@ -16,7 +16,7 @@ from typing import Mapping
 
 
 DEFAULT_ADAPTIVE_CONFIG_PATH = Path(__file__).with_name("adaptive_policy.ini")
-SUPPORTED_CONFIG_VERSION = 2
+SUPPORTED_CONFIG_VERSION = 3
 
 STRATEGY_NAMES = (
     "EMPATHIC_REFLECTION",
@@ -184,6 +184,7 @@ class ContextThresholds:
 @dataclass(frozen=True)
 class RetentionThresholds:
     analysis_events_days: float
+    analysis_snapshots_days: float
     context_cards_days: float
     audit_log_days: float
     expired_event_grace_days: float
@@ -972,6 +973,12 @@ def load_adaptive_policy_config(
             parser,
             "retention",
             "analysis_events_days",
+            minimum=0.01,
+        ),
+        analysis_snapshots_days=_float(
+            parser,
+            "retention",
+            "analysis_snapshots_days",
             minimum=0.01,
         ),
         context_cards_days=_float(

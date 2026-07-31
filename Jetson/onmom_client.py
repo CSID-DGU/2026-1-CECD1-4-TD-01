@@ -229,6 +229,14 @@ def parse_args() -> argparse.Namespace:
     status = subparsers.add_parser("status", help="inspect learning progress")
     _add_connection_args(status)
 
+    snapshots = subparsers.add_parser(
+        "analysis-snapshots",
+        help="inspect developer structured analysis snapshots",
+    )
+    _add_connection_args(snapshots)
+    snapshots.add_argument("--limit", type=int, default=10)
+    snapshots.add_argument("--category")
+
     rollback = subparsers.add_parser("rollback", help="restore a saved policy version")
     _add_connection_args(rollback)
     rollback.add_argument("--version", type=int, required=True)
@@ -324,6 +332,18 @@ def main() -> None:
         result = request_json(service_url(args.base_url, "/v1/policy"), token)
     elif args.command == "status":
         result = request_json(service_url(args.base_url, "/v1/learning-status"), token)
+    elif args.command == "analysis-snapshots":
+        query = {"limit": args.limit}
+        if args.category:
+            query["category"] = args.category.strip().upper()
+        result = request_json(
+            service_url(
+                args.base_url,
+                "/v1/analysis-snapshots",
+                query,
+            ),
+            token,
+        )
     elif args.command == "rollback":
         result = request_json(
             service_url(args.base_url, "/v1/policy/rollback"),

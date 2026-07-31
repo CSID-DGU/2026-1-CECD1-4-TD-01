@@ -41,9 +41,11 @@ import java.time.LocalDate
 
 enum class AppScreen(val label: String, val icon: String) {
     Chat("대화", "톡"),
+    Guardian("안심", "알림"),
     Gallery("갤러리", "사진"),
     Health("건강", "심박"),
     Phenotype("패턴", "생활"),
+    Iot("IoT", "집"),
     Settings("설정", "설"),
 }
 
