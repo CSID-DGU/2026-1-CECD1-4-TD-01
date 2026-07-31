@@ -37,6 +37,7 @@ fun JetsonSyncDialog(
     val client = remember { JetsonDerivedInsightClient() }
     val adaptiveClient = remember { JetsonAdaptiveContextClient() }
     val analysisClient = remember { JetsonAnalysisSnapshotClient() }
+    val rawDataClient = remember { JetsonRawDataSyncClient() }
     var endpoint by remember { mutableStateOf(settingsStore.loadEndpoint()) }
     var token by remember { mutableStateOf(settingsStore.loadToken()) }
     var availableCategories by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -177,6 +178,49 @@ fun JetsonSyncDialog(
                         },
                     ) {
                         Text("개발자 분석 수치만 수동 전송")
+                    }
+                }
+                if (!connectionOnly) item {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isSending && endpoint.isNotBlank() && token.isNotBlank(),
+                        onClick = {
+                            val saveResult = runCatching {
+                                settingsStore.save(endpoint, token)
+                            }
+                            if (saveResult.isFailure) {
+                                statusMessage = "보안 저장 실패: " +
+                                    (saveResult.exceptionOrNull()?.message
+                                        ?: "Android Keystore 오류")
+                            } else {
+                                isSending = true
+                                statusMessage = "원본 데이터를 수집하여 전송하고 있습니다..."
+                                scope.launch {
+                                    val healthSummary = runCatching { readHealthSummary(context, HealthPeriod.Week) }.getOrNull()
+                                    val healthOverview = runCatching { readExtendedHealthOverview(context, HealthPeriod.Week) }.getOrNull()
+                                    val callSummary = runCatching { com.psychocare.phenotype.CallLogAnalyzer(context.applicationContext).analyze() }.getOrNull()
+                                    val appUsageSummary = runCatching { com.psychocare.phenotype.AppUsageAnalyzer(context.applicationContext).analyze() }.getOrNull()
+                                    val calendarSummary = runCatching { com.psychocare.phenotype.CalendarAnalyzer(context.applicationContext).analyze() }.getOrNull()
+                                    
+                                    rawDataClient.sendRawData(
+                                        context,
+                                        healthSummary,
+                                        healthOverview,
+                                        callSummary,
+                                        appUsageSummary,
+                                        null,
+                                        calendarSummary
+                                    ).onSuccess {
+                                        statusMessage = "원본 데이터 전송 완료"
+                                    }.onFailure {
+                                        statusMessage = "원본 데이터 전송 실패: ${it.message}"
+                                    }
+                                    isSending = false
+                                }
+                            }
+                        },
+                    ) {
+                        Text("모든 원본 데이터 전송 (위험)", color = MaterialTheme.colorScheme.error)
                     }
                 }
                 item {

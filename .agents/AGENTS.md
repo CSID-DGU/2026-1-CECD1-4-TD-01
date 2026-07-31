@@ -1,0 +1,1 @@
+- 안드로이드 앱 코드를 수정한 경우, 작업 완료 전에 항상 `.\gradlew.bat assembleDebug`(Windows 환경)를 실행하여 빌드를 완료할 것.

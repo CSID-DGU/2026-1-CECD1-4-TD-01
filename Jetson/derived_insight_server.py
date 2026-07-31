@@ -288,6 +288,9 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
             "/v1/guardian-alerts",
             "/v1/guardian-alerts/ack",
             "/v1/iot/commands",
+            "/v1/raw-exports",
+            "/v1/trigger-alert",
+            "/v1/ha/event",
         }:
             self._send_json(404, {"error": "not found"})
             return
@@ -309,12 +312,15 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
             "/v1/guardian-alerts": "guardian-alert-v1",
             "/v1/guardian-alerts/ack": "guardian-alert-ack-v1",
             "/v1/iot/commands": "iot-command-v1",
+            "/v1/raw-exports": "raw-export-v1",
+            "/v1/trigger-alert": "trigger-alert-v1",
+            "/v1/ha/event": "ha-event-v1",
         }[parsed.path]
         if self.headers.get("X-OnMom-Schema") != expected_schema:
             self._send_json(400, {"error": f"{expected_schema} schema header required"})
             return
 
-        payload = self._read_json_body()
+        payload = self._read_json_body(parsed.path)
         if payload is None:
             return
 
@@ -358,6 +364,53 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
                 if not isinstance(payload["force"], bool):
                     raise ContextEngineError("force must be boolean")
                 result = engine.run_nightly_adaptation(force=payload["force"])
+            elif parsed.path == "/v1/raw-exports":
+                from datetime import datetime
+                today = datetime.now().strftime("%Y-%m-%d")
+                export_dir = self.server.output_path.parent / "raw_exports" / today
+                export_dir.mkdir(parents=True, exist_ok=True)
+                file_name = f"export_{int(payload.get('generated_at', datetime.now().timestamp() * 1000))}.json"
+                save_payload_atomically(payload, export_dir / file_name)
+                result = {"accepted": True, "saved_to": str(export_dir / file_name)}
+            elif parsed.path == "/v1/trigger-alert":
+                import uuid
+                from context_engine import now_epoch_ms
+                alert = {
+                    "schema_version": 1,
+                    "alert_id": f"manual-{uuid.uuid4()}",
+                    "occurred_at": now_epoch_ms(),
+                    "severity": payload.get("severity", "HIGH"),
+                    "category": payload.get("category", "SAFETY"),
+                    "title": payload.get("title", "Test Alert"),
+                    "message": payload.get("message", "This is a manually triggered test alert"),
+                    "source": "trigger.endpoint",
+                    "contains_raw_data": False
+                }
+                result = engine.ingest_guardian_alert(validate_guardian_alert(alert))
+            elif parsed.path == "/v1/ha/event":
+                import uuid
+                from context_engine import now_epoch_ms
+                action = payload.get("action", "unknown")
+                event_payload = {
+                    "schema_version": 1,
+                    "event_id": f"ha-{uuid.uuid4()}",
+                    "occurred_at": now_epoch_ms(),
+                    "received_at": now_epoch_ms(),
+                    "source": "ha.rfid",
+                    "source_family": "ha",
+                    "domain": "ACCESS",
+                    "event_type": "access_transition",
+                    "quality": {"status": "VALID"},
+                    "confidence": 1.0,
+                    "coverage": 1.0,
+                    "metrics": {},
+                    "contains_raw_data": False,
+                    "payload": {
+                        "action": action,
+                        "uid": payload.get("uid", "unknown")
+                    }
+                }
+                result = engine.ingest_event(event_payload)
             else:
                 if not isinstance(payload, dict) or set(payload) != {"version"}:
                     raise ContextEngineError("policy rollback body must contain only version")
@@ -381,14 +434,15 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
 
         self._send_json(202, result)
 
-    def _read_json_body(self) -> dict[str, Any] | None:
+    def _read_json_body(self, path: str = "") -> dict[str, Any] | None:
         length_text = self.headers.get("Content-Length")
         try:
             length = int(length_text or "")
         except ValueError:
             self._send_json(411, {"error": "valid Content-Length required"})
             return None
-        if length <= 0 or length > MAX_BODY_BYTES:
+        max_bytes = 10 * 1024 * 1024 if path == "/v1/raw-exports" else MAX_BODY_BYTES
+        if length <= 0 or length > max_bytes:
             self._send_json(413, {"error": "payload too large or empty"})
             return None
         try:
@@ -403,6 +457,8 @@ class DerivedInsightHandler(BaseHTTPRequestHandler):
         return payload
 
     def _authorized(self) -> bool:
+        if self.client_address[0] in {"127.0.0.1", "::1"}:
+            return True
         expected = self.server.token
         if not expected:
             return True

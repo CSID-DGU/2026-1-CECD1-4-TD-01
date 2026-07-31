@@ -88,6 +88,14 @@ fun PhenotypeScreen(presentationMode: Boolean = false) {
         },
     )
 
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = {
+            message = if (it) "캘린더 권한을 허용했습니다." else "캘린더 권한을 허용하지 않았습니다."
+            refresh()
+        },
+    )
+
     LaunchedEffect(Unit) {
         refresh()
     }
@@ -128,6 +136,19 @@ fun PhenotypeScreen(presentationMode: Boolean = false) {
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(if (presentationMode) "생활 리듬 연결" else "앱 사용 설정")
+                }
+                Button(
+                    onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+                            refresh()
+                        } else {
+                            calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                        }
+                    },
+                    enabled = !isLoading,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text("캘린더 권한")
                 }
                 OutlinedButton(
                     onClick = { refresh() },

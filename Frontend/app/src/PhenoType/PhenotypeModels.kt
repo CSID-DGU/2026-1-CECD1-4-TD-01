@@ -61,10 +61,33 @@ data class AppUsageSummary(
 )
 
 // ─────────────────────────────────────────────
+// 캘린더 원시 데이터
+// ─────────────────────────────────────────────
+data class CalendarEntry(
+    val title: String,
+    val dateMs: Long,
+    val endDateMs: Long,
+    val isAllDay: Boolean
+)
+
+// ─────────────────────────────────────────────
+// 캘린더 분석 결과
+// ─────────────────────────────────────────────
+data class CalendarSummary(
+    val upcomingEvents: List<CalendarEntry>,
+    val pastEvents: List<CalendarEntry>,
+    val upcomingCount: Int,
+    val pastCount: Int,
+    val hasPermission: Boolean
+)
+
+// ─────────────────────────────────────────────
 // 통합 피노타입 데이터
 // ─────────────────────────────────────────────
 data class PhenotypeData(
     val callLog: CallLogSummary?,
     val appUsage: AppUsageSummary?,
+    val calendar: CalendarSummary? = null,
     val collectedAt: Long = System.currentTimeMillis()
 )
+

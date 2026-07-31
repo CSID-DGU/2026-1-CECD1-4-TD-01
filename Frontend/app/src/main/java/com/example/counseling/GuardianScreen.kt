@@ -13,6 +13,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +43,7 @@ fun GuardianScreen(onConfigureJetson: () -> Unit) {
     var alerts by remember { mutableStateOf<List<GuardianAlert>>(emptyList()) }
     var status by remember { mutableStateOf("Jetson 알림을 확인하고 있습니다.") }
     var busyAlertId by remember { mutableStateOf<String?>(null) }
+    var showAcknowledged by remember { mutableStateOf(false) }
 
     suspend fun refresh() {
         val token = settings.loadToken()
@@ -86,6 +89,20 @@ fun GuardianScreen(onConfigureJetson: () -> Unit) {
                             Text("Jetson 연결")
                         }
                     }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Switch(
+                            checked = showAcknowledged,
+                            onCheckedChange = { showAcknowledged = it },
+                        )
+                        Text(
+                            "처리 완료된 알림도 보기",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
                     Text(
                         "앱을 닫아도 연결 상태 알림이 표시되는 동안 15초마다 위험 신호를 확인합니다.",
                         style = MaterialTheme.typography.labelSmall,
@@ -93,7 +110,8 @@ fun GuardianScreen(onConfigureJetson: () -> Unit) {
                 }
             }
         }
-        if (alerts.isEmpty()) {
+        val visibleAlerts = if (showAcknowledged) alerts else alerts.filter { !it.acknowledged }
+        if (visibleAlerts.isEmpty()) {
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -101,14 +119,14 @@ fun GuardianScreen(onConfigureJetson: () -> Unit) {
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
                     Text(
-                        "새 위험 신호가 들어오면 여기에 표시됩니다.",
+                        if (alerts.isNotEmpty()) "모든 알림이 처리되었습니다." else "새 위험 신호가 들어오면 여기에 표시됩니다.",
                         modifier = Modifier.padding(20.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
-        items(alerts, key = GuardianAlert::alertId) { alert ->
+        items(visibleAlerts, key = GuardianAlert::alertId) { alert ->
             GuardianAlertCard(
                 alert = alert,
                 busy = busyAlertId == alert.alertId,

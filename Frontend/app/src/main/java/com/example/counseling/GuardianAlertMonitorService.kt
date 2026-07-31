@@ -74,6 +74,29 @@ class GuardianAlertMonitorService : Service() {
     }
 
     private fun notifyAlert(alert: GuardianAlert) {
+        if (alert.category == "SYSTEM" && alert.title == "SYNC_RAW_DATA") {
+            scope.launch {
+                runCatching {
+                    val healthSummary = runCatching { readHealthSummary(applicationContext, HealthPeriod.Week) }.getOrNull()
+                    val healthOverview = runCatching { readExtendedHealthOverview(applicationContext, HealthPeriod.Week) }.getOrNull()
+                    val callSummary = runCatching { com.psychocare.phenotype.CallLogAnalyzer(applicationContext).analyze() }.getOrNull()
+                    val appUsageSummary = runCatching { com.psychocare.phenotype.AppUsageAnalyzer(applicationContext).analyze() }.getOrNull()
+                    val calendarSummary = runCatching { com.psychocare.phenotype.CalendarAnalyzer(applicationContext).analyze() }.getOrNull()
+                    
+                    JetsonRawDataSyncClient().sendRawData(
+                        applicationContext,
+                        healthSummary,
+                        healthOverview,
+                        callSummary,
+                        appUsageSummary,
+                        null,
+                        calendarSummary
+                    )
+                }
+            }
+            return
+        }
+
         if (!shouldNotifyGuardianAlert(alert, System.currentTimeMillis())) return
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)

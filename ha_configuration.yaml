@@ -1,0 +1,26 @@
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# Load frontend themes from the themes folder
+frontend:
+  themes: !include_dir_merge_named themes
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+rest_command:
+  send_onmom_alert:
+    url: "http://127.0.0.1:8765/v1/trigger-alert"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      X-OnMom-Schema: "trigger-alert-v1"
+    payload: >
+      {
+        "severity": "{{ severity | default('HIGH') }}",
+        "title": "{{ title | default('가상 기기 알림') }}",
+        "message": "{{ message | default('홈 어시스턴트에서 보낸 푸시 알림입니다.') }}"
+      }
+
