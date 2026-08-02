@@ -1,0 +1,123 @@
+services:
+  llama:
+    image: ghcr.io/nvidia-ai-iot/llama_cpp:latest-jetson-orin
+    runtime: nvidia
+    restart: unless-stopped
+    volumes:
+      - ${JETSON_MODEL_DIR:-/home/iot/onmom_mergeVer/models/gemma4}:/models:ro
+      - ./llama-models.ini:/config/models.ini:ro
+    command:
+      - llama-server
+      - --models-preset
+      - /config/models.ini
+      - --models-max
+      - "1"
+      - -ngl
+      - "99"
+      - -c
+      - ${LLAMA_CONTEXT:-4096}
+      - -b
+      - ${LLAMA_BATCH:-512}
+      - -ub
+      - ${LLAMA_UBATCH:-256}
+      - -np
+      - ${LLAMA_PARALLEL:-1}
+      - --cache-ram
+      - ${LLAMA_CACHE_RAM:-0}
+      - --sleep-idle-seconds
+      - ${LLAMA_SLEEP_IDLE_SECONDS:-60}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --reasoning
+      - "off"
+  gateway:
+    build:
+      context: ./jetson_gateway
+    runtime: nvidia
+    restart: unless-stopped
+    depends_on:
+      - llama
+    ports:
+      - ${GATEWAY_PORT:-8000}:8000
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ONMOM_LLAMA_URL: http://llama:8080
+      ONMOM_LLAMA_SLEEP_IDLE_SECONDS: ${LLAMA_SLEEP_IDLE_SECONDS:-60}
+      ONMOM_WHISPER_MODEL: /models/whisper/${WHISPER_MODEL_FILE:-ggml-large-v3-turbo-q5_0.bin}
+      ONMOM_WHISPER_FALLBACK_MODEL: /models/whisper/${WHISPER_FALLBACK_MODEL_FILE:-ggml-small-q5_1.bin}
+      ONMOM_PIPER_MODEL: /models/piper/${PIPER_MODEL_FILE:-ko_KR-kss-medium.onnx}
+      ONMOM_TTS_BACKEND: ${TTS_BACKEND:-supertonic_int8}
+      ONMOM_SUPERTONIC_VOICE: ${SUPERTONIC_VOICE:-F5}
+      ONMOM_SUPERTONIC_STEPS: ${SUPERTONIC_STEPS:-5}
+      ONMOM_SUPERTONIC_THREADS: ${SUPERTONIC_THREADS:-4}
+      ONMOM_SUPERTONIC_INT8_MODEL_DIR: /models/supertonic_int8
+      ONMOM_WHISPER_THREADS: ${WHISPER_THREADS:-6}
+      ONMOM_SILERO_VAD_MODEL: /models/vad/silero_vad.onnx
+      ONMOM_ALSA_DEVICE: ${ALSA_DEVICE:-default}
+      ONMOM_MAX_RECORDING_SECONDS: ${RECORDING_MAX_SECONDS:-30}
+      ONMOM_MIN_AUDIO_RMS: ${MIN_AUDIO_RMS:-500}
+      ONMOM_VAD_SPEECH_RMS: ${VAD_SPEECH_RMS:-700}
+      ONMOM_VAD_CONFIDENCE: ${VAD_CONFIDENCE:-0.65}
+      ONMOM_VAD_SILENCE_MS: ${VAD_SILENCE_MS:-900}
+      ONMOM_VAD_MIN_SPEECH_MS: ${VAD_MIN_SPEECH_MS:-350}
+      ONMOM_MAX_TOKENS: ${LLAMA_MAX_TOKENS:-1024}
+      ONMOM_MIN_RESPONSE_CHARS: ${MIN_RESPONSE_CHARS:-60}
+      ONMOM_KEEP_RECORDINGS: ${KEEP_RECORDINGS:-false}
+      ONMOM_DATABASE_PATH: /data/onmom.db
+      ONMOM_RECORDINGS_DIR: /data/recordings
+      ONMOM_SPEECH_PRIORITY_MARKER: /data/speech_priority.lock
+      ONMOM_SPEECH_PRIORITY_SETTLE_MS: ${SPEECH_PRIORITY_SETTLE_MS:-800}
+      ONMOM_VOICE_EMOTION_ENABLED: ${VOICE_EMOTION_ENABLED:-false}
+      ONMOM_VOICE_EMOTION_MODEL: /models/voice_emotion/voice_emotion_q4.onnx
+      ONMOM_VOICE_EMOTION_THREADS: ${VOICE_EMOTION_THREADS:-2}
+      ONMOM_VOICE_EMOTION_KEEP_LOADED: ${VOICE_EMOTION_KEEP_LOADED:-false}
+      ONMOM_DERIVED_INSIGHTS_PATH: /insights/latest_derived_insights.json
+      ONMOM_INSIGHTS_DATABASE_PATH: /onmom-data/insights/onmom_context.db
+      ONMOM_RAW_EXPORTS_PATH: /raw-exports
+      ONMOM_PROACTIVE_QUESTION_MAX_AGE_HOURS: ${PROACTIVE_QUESTION_MAX_AGE_HOURS:-168}
+      ONMOM_HEALTH_MONITOR_ENABLED: ${HEALTH_MONITOR_ENABLED:-true}
+      ONMOM_HEALTH_MONITOR_DATABASE_PATH: /data/health-proactive.sqlite3
+      ONMOM_ROOM_DATABASE_PATH: /onmom-data/room/room-analytics.sqlite3
+      ONMOM_HOME_ASSISTANT_DATABASE_PATH: /onmom-data/home_assistant/onmom-home-assistant-history.sqlite3
+      ONMOM_CALENDAR_EVENTS_PATH: /onmom-data/calendar/events.json
+      ONMOM_HEALTH_MONITOR_TIMEZONE: ${HEALTH_MONITOR_TIMEZONE:-Asia/Seoul}
+      ONMOM_HEALTH_MONITOR_INTERVAL_SECONDS: ${HEALTH_MONITOR_INTERVAL_SECONDS:-60}
+      ONMOM_HEALTH_MONITOR_STARTUP_DELAY_SECONDS: ${HEALTH_MONITOR_STARTUP_DELAY_SECONDS:-10}
+      ONMOM_PROACTIVE_MAX_NONURGENT_PER_DAY: ${PROACTIVE_MAX_NONURGENT_PER_DAY:-4}
+      ONMOM_HEALTH_ANALYSIS_WINDOW_DAYS: ${HEALTH_ANALYSIS_WINDOW_DAYS:-21}
+      ONMOM_HEALTH_SCENARIO_DATASET_ROOT: /onmom-data/insights/scenarios
+      ONMOM_ACTION_GATEWAY_URL: http://host.docker.internal:8765
+      ONMOM_ACTION_TOKEN_FILE: /run/onmom/action-token
+      ONMOM_BEDROOM_LIGHT_DEVICE_ID: ${BEDROOM_LIGHT_DEVICE_ID:-light_cimsil_esp12n_light_light}
+      ONMOM_SPEAKER_BRIDGE_URL: http://host.docker.internal:8001
+      ONMOM_AUTOMATIC_GUARDIAN_ALERT_ENABLED: ${AUTOMATIC_GUARDIAN_ALERT_ENABLED:-true}
+      ONMOM_AUTOMATIC_GUARDIAN_ALERT_COOLDOWN_SECONDS: ${AUTOMATIC_GUARDIAN_ALERT_COOLDOWN_SECONDS:-600}
+      ONMOM_AUTOMATIC_MORNING_LIGHT_ENABLED: ${AUTOMATIC_MORNING_LIGHT_ENABLED:-true}
+      ONMOM_AROUSAL_FACE_MIN_CONFIDENCE: ${AROUSAL_FACE_MIN_CONFIDENCE:-0.60}
+      ONMOM_AROUSAL_FACE_THRESHOLD: ${AROUSAL_FACE_THRESHOLD:-0.72}
+      ONMOM_AROUSAL_RPPG_MIN_QUALITY: ${AROUSAL_RPPG_MIN_QUALITY:-0.60}
+      ONMOM_AROUSAL_RPPG_BPM: ${AROUSAL_RPPG_BPM:-100}
+      ONMOM_AROUSAL_RPPG_CRITICAL_BPM: ${AROUSAL_RPPG_CRITICAL_BPM:-125}
+      ONMOM_AROUSAL_VOICE_MIN_CONFIDENCE: ${AROUSAL_VOICE_MIN_CONFIDENCE:-0.60}
+    volumes:
+      - ${WHISPER_MODEL_DIR:-/home/iot/onmom_mergeVer/models/whisper}:/models/whisper:ro
+      - ${PIPER_MODEL_DIR:-/home/iot/onmom_mergeVer/models/piper}:/models/piper:ro
+      # Supertonic downloads into a temporary sibling directory and then
+      # atomically renames it to supertonic3. Mount the parent cache so both
+      # paths stay on the same filesystem and the model persists.
+      - ${SUPERTONIC_MODEL_DIR:-/home/iot/onmom_mergeVer/models/supertonic}:/root/.cache
+      - ${SUPERTONIC_INT8_MODEL_DIR:-/home/iot/onmom_mergeVer/models/supertonic_int8/sherpa-onnx-supertonic-3-tts-int8-2026-05-11}:/models/supertonic_int8:ro
+      - ${SILERO_VAD_MODEL_DIR:-/home/iot/onmom_mergeVer/models/vad}:/models/vad:ro
+      - ${VOICE_EMOTION_MODEL_DIR:-/home/iot/onmom_mergeVer/models/voice_emotion}:/models/voice_emotion:ro
+      - ${ONMOM_COUNSELING_DATA_DIR:-/home/iot/onmom_mergeVer/data/counseling}:/data
+      - ${ONMOM_INSIGHTS_DIR:-/home/iot/onmom_mergeVer/data/insights}:/insights:ro
+      - ${ONMOM_RAW_EXPORTS_DIR:-/home/iot/onmom_mergeVer/derived_insights/data/raw_exports}:/raw-exports:ro
+      - ${ONMOM_DATA_ROOT:-/home/iot/onmom_mergeVer/data}:/onmom-data:ro
+      - /home/iot/.config/onmom/jetson_sync_token:/run/onmom/action-token:ro

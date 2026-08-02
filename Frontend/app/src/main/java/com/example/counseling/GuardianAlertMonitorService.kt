@@ -83,6 +83,7 @@ class GuardianAlertMonitorService : Service() {
                     val appUsageSummary = runCatching { com.psychocare.phenotype.AppUsageAnalyzer(applicationContext).analyze() }.getOrNull()
                     val calendarSummary = runCatching { com.psychocare.phenotype.CalendarAnalyzer(applicationContext).analyze() }.getOrNull()
                     val rawExerciseEntries = runCatching { readRawExerciseRecords(applicationContext) }.getOrNull()
+                    val rawSleepSessions = runCatching { readRawSleepSessions(applicationContext) }.getOrNull()
                     
                     JetsonRawDataSyncClient().sendRawData(
                         applicationContext,
@@ -92,7 +93,9 @@ class GuardianAlertMonitorService : Service() {
                         appUsageSummary,
                         null,
                         calendarSummary,
-                        rawExerciseEntries
+                        rawExerciseEntries,
+
+                        rawSleepSessions
                     )
                 }
             }

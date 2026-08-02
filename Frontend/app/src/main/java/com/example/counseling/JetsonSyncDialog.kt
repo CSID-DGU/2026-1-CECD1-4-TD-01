@@ -202,6 +202,7 @@ fun JetsonSyncDialog(
                                     val appUsageSummary = runCatching { com.psychocare.phenotype.AppUsageAnalyzer(context.applicationContext).analyze() }.getOrNull()
                                     val calendarSummary = runCatching { com.psychocare.phenotype.CalendarAnalyzer(context.applicationContext).analyze() }.getOrNull()
                                     val rawExerciseEntries = runCatching { readRawExerciseRecords(context) }.getOrNull()
+                                    val rawSleepSessions = runCatching { readRawSleepSessions(context) }.getOrNull()
                                     
                                     rawDataClient.sendRawData(
                                         context,
@@ -211,7 +212,8 @@ fun JetsonSyncDialog(
                                         appUsageSummary,
                                         null,
                                         calendarSummary,
-                                        rawExerciseEntries
+                                        rawExerciseEntries,
+                                        rawSleepSessions
                                     ).onSuccess {
                                         statusMessage = "원본 데이터 전송 완료"
                                     }.onFailure {

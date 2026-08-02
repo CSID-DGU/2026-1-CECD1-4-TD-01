@@ -89,6 +89,11 @@ data class RawExerciseEntry(
     val exerciseTypeLabel: String
 )
 
+data class RawSleepSession(
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+)
+
 private val localDateTimeFormatter = DateTimeFormatter.ofPattern("MM.dd HH:mm")
 
 suspend fun readExtendedHealthOverview(
@@ -805,4 +810,29 @@ suspend fun readRawExerciseRecords(context: Context): List<RawExerciseEntry>? = 
             exerciseTypeLabel = exerciseTypeLabel(record.exerciseType)
         )
     }
+}
+
+suspend fun readRawSleepSessions(context: Context): List<RawSleepSession>? = withContext(Dispatchers.IO) {
+    if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_UNAVAILABLE) {
+        return@withContext null
+    }
+
+    val client = HealthConnectClient.getOrCreate(context)
+    val granted = runCatching { client.permissionController.getGrantedPermissions() }.getOrNull() ?: return@withContext null
+    if (HealthPermission.getReadPermission(SleepSessionRecord::class) !in granted) {
+        return@withContext null
+    }
+
+    val response = runCatching {
+        client.readRecords(
+            ReadRecordsRequest(
+                recordType = SleepSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            ),
+        )
+    }.getOrNull() ?: return@withContext null
+
+    response.records
+        .filter { Duration.between(it.startTime, it.endTime).toMinutes() in 7..(24 * 60) }
+        .map { RawSleepSession(it.startTime.toEpochMilli(), it.endTime.toEpochMilli()) }
 }

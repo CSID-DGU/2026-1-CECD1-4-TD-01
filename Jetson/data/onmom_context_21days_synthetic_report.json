@@ -1,0 +1,21 @@
+{
+  "database": "data\\onmom_context_21days_synthetic.db",
+  "synthetic": true,
+  "timezone": "Asia/Seoul",
+  "start_date": "2026-07-11",
+  "end_date": "2026-07-31",
+  "days": 21,
+  "table_counts": {
+    "analysis_events": 189,
+    "analysis_snapshots": 21,
+    "audit_log": 256,
+    "context_cards": 14,
+    "derived_summaries": 0,
+    "guardian_alerts": 2,
+    "policy_style_values": 40,
+    "policy_versions": 12,
+    "policy_weights": 24,
+    "session_outcomes": 11,
+    "system_state": 1
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "generated_at_kst": "2026-07-31T23:00:00+09:00",
+  "algorithm_config": "/home/iot/onmom_mergeVer/derived_insights/adaptive_policy.ini",
+  "scenarios": [
+    {
+      "scenario": "01_stable_baseline",
+      "label": "01 \uc548\uc815 \uae30\uc900\uc120",
+      "database": "/home/iot/onmom_mergeVer/data/insights/scenarios/01_stable_baseline.db",
+      "description": "\uc548\uc815 \uae30\uc900\uc120: \ub69c\ub837\ud55c \uc0dd\ud65c \ubcc0\ud654\uac00 \uc5c6\ub294 \uc0c1\ud0dc",
+      "synthetic": true,
+      "event_count": 28,
+      "expected": {
+        "absent": [
+          "PERSONAL_BASELINE_CHANGE"
+        ]
+      },
+      "actual": {
+        "card_codes": [],
+        "emotion_bucket": "NEUTRAL",
+        "recommended_strategies": [
+          "EMPATHIC_REFLECTION",
+          "GROUNDING",
+          "MICRO_ACTION"
+        ]
+      }
+    },
+    {
+      "scenario": "02_activity_posture_decline",
+      "label": "02 \ud65c\ub3d9\u00b7\uc790\uc138 \uc800\ud558",
+      "database": "/home/iot/onmom_mergeVer/data/insights/scenarios/02_activity_posture_decline.db",
+      "description": "\ud65c\ub3d9\ub7c9\uacfc \uc790\uc138 \uc9c0\ud45c\uac00 \ud568\uaed8 \uc800\ud558\ub41c 21\uc77c \uc2dc\ub098\ub9ac\uc624",
+      "synthetic": true,
+      "event_count": 56,
+      "expected": {
+        "present": [
+          "PERSONAL_BASELINE_CHANGE"
+        ]
+      },
+      "actual": {
+        "card_codes": [
+          "PERSONAL_BASELINE_CHANGE",
+          "PERSONAL_BASELINE_CHANGE"
+        ],
+        "emotion_bucket": "NEUTRAL",
+        "recommended_strategies": [
+          "EMPATHIC_REFLECTION",
+          "GROUNDING",
+          "MICRO_ACTION"
+        ]
+      }
+    },
+    {
+      "scenario": "03_late_rfid_entry",
+      "label": "03 \ub2a6\uc740 \uadc0\uac00",
+      "database": "/home/iot/onmom_mergeVer/data/insights/scenarios/03_late_rfid_entry.db",
+      "description": "RFID \uadc0\uac00 \uc2dc\uac04\uc774 2\uc2dc\uac04 \ub2a6\uc5b4\uc9c4 \uc0dd\ud65c \ub9ac\ub4ec \ubcc0\ud654 \uc2dc\ub098\ub9ac\uc624",
+      "synthetic": true,
+      "event_count": 21,
+      "expected": {
+        "present": [
+          "RFID_ENTRY_TIME_SHIFT"
+        ]
+      },
+      "actual": {
+        "card_codes": [
+          "RFID_ENTRY_TIME_SHIFT"
+        ],
+        "emotion_bucket": "NEUTRAL",
+        "recommended_strategies": [
+          "EMPATHIC_REFLECTION",
+          "GROUNDING",
+          "MICRO_ACTION"
+        ]
+      }
+    },
+    {
+      "scenario": "04_low_quality_guard",
+      "label": "04 \uc800\ud488\uc9c8 \uc2e0\ud638 \ubc29\uc5b4",
+      "database": "/home/iot/onmom_mergeVer/data/insights/scenarios/04_low_quality_guard.db",
+      "description": "\uc2e0\ub8b0\ub3c4\uac00 \ub0ae\uc740 \uc2e0\ud638\ub97c \uc704\ud5d8 \ud310\ub2e8\uc5d0\uc11c \uc81c\uc678\ud558\ub294 \uc2dc\ub098\ub9ac\uc624",
+      "synthetic": true,
+      "event_count": 28,
+      "expected": {
+        "absent": [
+          "PERSONAL_BASELINE_CHANGE"
+        ]
+      },
+      "actual": {
+        "card_codes": [],
+        "emotion_bucket": "NEUTRAL",
+        "recommended_strategies": [
+          "EMPATHIC_REFLECTION",
+          "GROUNDING",
+          "MICRO_ACTION"
+        ]
+      }
+    },
+    {
+      "scenario": "05_negative_high_arousal",
+      "label": "05 \ubd80\uc815\uc801 \uace0\ud765\ubd84",
+      "database": "/home/iot/onmom_mergeVer/data/insights/scenarios/05_negative_high_arousal.db",
+      "description": "\ubcf5\ud569 \uac10\uc815 \uc2e0\ud638\uac00 \ub192\uc740 \ud765\ubd84\ub3c4\ub85c \uad00\ucc30\ub418\ub294 \uc2dc\ub098\ub9ac\uc624",
+      "synthetic": true,
+      "event_count": 1,
+      "expected": {
+        "bucket": "NEGATIVE_HIGH_AROUSAL"
+      },
+      "actual": {
+        "card_codes": [],
+        "emotion_bucket": "NEGATIVE_HIGH_AROUSAL",
+        "recommended_strategies": [
+          "EMPATHIC_REFLECTION",
+          "GROUNDING",
+          "MICRO_ACTION"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+services:
+  llama:
+    image: ghcr.io/nvidia-ai-iot/llama_cpp:latest-jetson-orin
+    runtime: nvidia
+    restart: unless-stopped
+    volumes:
+      - ${JETSON_MODEL_DIR:-/home/iot/models/gemma4}:/models:ro
+    command:
+      - llama-server
+      - -m
+      - /models/${GEMMA_MODEL_FILE:-gemma-4-E2B-it-original-HF-Q4_K_S.gguf}
+      - -ngl
+      - "99"
+      - -c
+      - ${LLAMA_CONTEXT:-8192}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --reasoning
+      - "off"
+      - --alias
+      - onmom-gemma
+  gateway:
+    build:
+      context: ./jetson_gateway
+    restart: unless-stopped
+    depends_on:
+      - llama
+    ports:
+      - ${GATEWAY_PORT:-8000}:8000
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+    environment:
+      ONMOM_LLAMA_URL: http://llama:8080
+      ONMOM_WHISPER_MODEL: /models/whisper/${WHISPER_MODEL_FILE:-ggml-base.bin}
+      ONMOM_PIPER_MODEL: /models/piper/${PIPER_MODEL_FILE:-ko_KR-kss-medium.onnx}
+      ONMOM_TTS_BACKEND: ${TTS_BACKEND:-supertonic_int8}
+      ONMOM_SUPERTONIC_VOICE: ${SUPERTONIC_VOICE:-F5}
+      ONMOM_SUPERTONIC_STEPS: ${SUPERTONIC_STEPS:-8}
+      ONMOM_SUPERTONIC_THREADS: ${SUPERTONIC_THREADS:-4}
+      ONMOM_SUPERTONIC_INT8_MODEL_DIR: /models/supertonic_int8
+      ONMOM_SILERO_VAD_MODEL: /models/vad/silero_vad.onnx
+      ONMOM_ALSA_DEVICE: ${ALSA_DEVICE:-default}
+      ONMOM_MAX_RECORDING_SECONDS: ${RECORDING_MAX_SECONDS:-30}
+      ONMOM_MIN_AUDIO_RMS: ${MIN_AUDIO_RMS:-500}
+      ONMOM_VAD_SPEECH_RMS: ${VAD_SPEECH_RMS:-700}
+      ONMOM_VAD_CONFIDENCE: ${VAD_CONFIDENCE:-0.65}
+      ONMOM_VAD_SILENCE_MS: ${VAD_SILENCE_MS:-900}
+      ONMOM_VAD_MIN_SPEECH_MS: ${VAD_MIN_SPEECH_MS:-350}
+      ONMOM_MAX_TOKENS: ${LLAMA_MAX_TOKENS:-1024}
+      ONMOM_MIN_RESPONSE_CHARS: ${MIN_RESPONSE_CHARS:-350}
+      ONMOM_KEEP_RECORDINGS: ${KEEP_RECORDINGS:-false}
+      ONMOM_DATABASE_PATH: /data/onmom.db
+      ONMOM_RECORDINGS_DIR: /data/recordings
+    volumes:
+      - ${WHISPER_MODEL_DIR:-/home/iot/models/whisper}:/models/whisper:ro
+      - ${PIPER_MODEL_DIR:-/home/iot/models/piper}:/models/piper:ro
+      - ${SUPERTONIC_INT8_MODEL_DIR:-/home/iot/onmom_mergeVer/models/supertonic_int8/sherpa-onnx-supertonic-3-tts-int8-2026-05-11}:/models/supertonic_int8:ro
+      - ${SILERO_VAD_MODEL_DIR:-/home/iot/models/vad}:/models/vad:ro
+      - ./data:/data

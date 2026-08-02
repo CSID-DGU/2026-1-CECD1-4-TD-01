@@ -23,7 +23,8 @@ data class RawDataPayload(
     val app_usage_summary: AppUsageSummary? = null,
     val gallery_result: GalleryAnalysisResult? = null,
     val calendar_summary: CalendarSummary? = null,
-    val raw_exercise_entries: List<RawExerciseEntry>? = null
+    val raw_exercise_entries: List<RawExerciseEntry>? = null,
+    val raw_sleep_sessions: List<RawSleepSession>? = null,
 )
 
 class JetsonRawDataSyncClient {
@@ -35,7 +36,8 @@ class JetsonRawDataSyncClient {
         appUsageSummary: AppUsageSummary?,
         galleryResult: GalleryAnalysisResult?,
         calendarSummary: CalendarSummary?,
-        rawExerciseEntries: List<RawExerciseEntry>?
+        rawExerciseEntries: List<RawExerciseEntry>?,
+        rawSleepSessions: List<RawSleepSession>?,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val settings = JetsonSyncSettingsStore(context)
         val endpointUrl = settings.loadEndpoint()
@@ -57,7 +59,8 @@ class JetsonRawDataSyncClient {
             app_usage_summary = appUsageSummary,
             gallery_result = galleryResult,
             calendar_summary = calendarSummary,
-            raw_exercise_entries = rawExerciseEntries
+            raw_exercise_entries = rawExerciseEntries,
+            raw_sleep_sessions = rawSleepSessions,
         )
 
         val json = GsonBuilder().serializeNulls().create().toJson(payload)
